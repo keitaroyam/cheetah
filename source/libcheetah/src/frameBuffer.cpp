@@ -15,6 +15,7 @@
 #include <pthread.h>
 #include <stdlib.h>
 #include <iostream>
+#include <unistd.h>
 #include "detectorObject.h"
 #include "frameBuffer.h"
 #include "median.h"
