@@ -158,7 +158,7 @@ int main(int argc, const char * argv[])
             long    pix_nn = cheetahGlobal.detector[detID].pix_nn;
             long    asic_nx = cheetahGlobal.detector[detID].asic_nx;
             long    asic_ny = cheetahGlobal.detector[detID].asic_ny;
-            eventData->detector[detID].raw_data = (uint16_t*) calloc(pix_nn, sizeof(uint16_t));
+            eventData->detector[detID].data_raw16 = (uint16_t*) calloc(pix_nn, sizeof(uint16_t));
             
             for(long ii=0; ii<pix_nn; ii++) {
                 eventData->detector[detID].raw_data[ii] = (uint16_t) lrint(buffer[ii]);
