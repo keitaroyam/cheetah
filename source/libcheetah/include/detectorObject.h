@@ -52,9 +52,26 @@ static const unsigned  mpCCD_nASICS_Y = 8;		// 2 ASICs down in raw data stresm
 // Rayonix MX170HS //
 static const unsigned  MX170HS_ASIC_NX = 3840;		// ASIC nx = extent of one ASIC in x
 static const unsigned  MX170HS_ASIC_NY = 3840;		// ASIC ny = extent of one ASIC in y
-static const unsigned  MX170HS_nASICS_X = 1;		// 2 ASICs across in raw data stream
-static const unsigned  MX170HS_nASICS_Y = 1;		// 2 ASICs down in raw data stresm
+static const unsigned  MX170HS_nASICS_X = 1;		// 1 ASICs across in raw data stream
+static const unsigned  MX170HS_nASICS_Y = 1;		// 1 ASICs down in raw data stresm
 
+// Dectris EIGER 1M //
+static const unsigned  EIGER1M_ASIC_NX = 1065;		// ASIC nx = extent of one ASIC in x
+static const unsigned  EIGER1M_ASIC_NY = 1030;		// ASIC ny = extent of one ASIC in y
+static const unsigned  EIGER1M_nASICS_X = 1;		// 1 ASICs across in raw data stream
+static const unsigned  EIGER1M_nASICS_Y = 1;		// 1 ASICs down in raw data stresm
+
+// Dectris EIGER 4M //
+static const unsigned  EIGER4M_ASIC_NX = 2167;		// ASIC nx = extent of one ASIC in x
+static const unsigned  EIGER4M_ASIC_NY = 2070;		// ASIC ny = extent of one ASIC in y
+static const unsigned  EIGER4M_nASICS_X = 1;		// 1 ASICs across in raw data stream
+static const unsigned  EIGER4M_nASICS_Y = 1;		// 1 ASICs down in raw data stresm
+
+// Dectris EIGER 16M //
+static const unsigned  EIGER16M_ASIC_NX = 4371;		// ASIC nx = extent of one ASIC in x
+static const unsigned  EIGER16M_ASIC_NY = 4150;		// ASIC ny = extent of one ASIC in y
+static const unsigned  EIGER16M_nASICS_X = 1;		// 1 ASICs across in raw data stream
+static const unsigned  EIGER16M_nASICS_Y = 1;		// 1 ASICs down in raw data stresm
 static const unsigned int cbufsize = 1024;
 
 /*
