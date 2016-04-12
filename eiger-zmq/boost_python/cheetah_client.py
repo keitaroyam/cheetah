@@ -223,6 +223,7 @@ def worker(wrk_num, ventilator_host, eiger_host, result_host, pub_host, mode, cu
             result["imgfile"] = imgfile
             result["template"] = "%s_%s.img"%(str(header["file_prefix"]), "?"*6)
             result["idx"] = header["frame"]+1
+            eltime = time.time()-startt
             result["starttime"] = startt
             result["endtime"] = time.time()
             print "Wrkr%3d Frame %6d Done in %.2f msec " % (wrk_num, header["frame"], eltime*1.e3)
