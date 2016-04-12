@@ -15,7 +15,8 @@
 #include "peakfinders.h"
 #include "cheetahmodules.h"
 
-int box_snr(float*, char*, int, int, int, int, float*, float*, float*);
+template<class T>
+int box_snr(T*, char*, int, int, int, int, float*, float*, float*);
 
 
 /*
@@ -437,7 +438,8 @@ int peakfinder3(tPeakList *peaklist, float *data, char *mask, long asic_nx, long
  *	Count peaks by searching for connected pixels above threshold
  *	Anton Barty
  */
-int peakfinder8(tPeakList *peaklist, float *data, char *mask, float *pix_r, long asic_nx, long asic_ny, long nasics_x, long nasics_y, float ADCthresh, float hitfinderMinSNR, long hitfinderMinPixCount, long hitfinderMaxPixCount, long hitfinderLocalBGRadius) {
+template<class T>
+int peakfinder8(tPeakList *peaklist, T *data, char *mask, float *pix_r, long asic_nx, long asic_ny, long nasics_x, long nasics_y, float ADCthresh, float hitfinderMinSNR, long hitfinderMinPixCount, long hitfinderMaxPixCount, long hitfinderLocalBGRadius) {
 	
 	// Derived values
 	long	pix_nx = asic_nx*nasics_x;
@@ -485,8 +487,8 @@ int peakfinder8(tPeakList *peaklist, float *data, char *mask, float *pix_r, long
 	/*
 	 *	Create a buffer for image data so we don't nuke the main image by mistake
 	 */
-	float *temp = (float*) calloc(pix_nn, sizeof(float));
-	memcpy(temp, data, pix_nn*sizeof(float));
+	T *temp = (T*) calloc(pix_nn, sizeof(T));
+	memcpy(temp, data, pix_nn*sizeof(T));
 	
 	
 	/*
@@ -877,7 +879,9 @@ int peakfinder8(tPeakList *peaklist, float *data, char *mask, float *pix_r, long
 	
 	
 }
-
+template int peakfinder8<float>(tPeakList *, float*, char *, float *, long, long, long, long, float, float, long, long, long);
+template int peakfinder8<uint16_t>(tPeakList *, uint16_t*, char *, float *, long, long, long, long, float, float, long, long, long);
+template int peakfinder8<uint32_t>(tPeakList *, uint32_t*, char *, float *, long, long, long, long, float, float, long, long, long);
 
 /*
  *	Warning - appears to be broken
@@ -1444,7 +1448,8 @@ int peakfinder8old(tPeakList *peaklist, float *data, char *mask, float *pix_r, l
  *	Peak finder 6
  *	Rick Kirian
  */
-int peakfinder6(tPeakList *peaklist, float *data, char *mask, long asic_nx, long asic_ny, long nasics_x, long nasics_y, float ADCthresh, float hitfinderMinSNR, long hitfinderMinPixCount, long hitfinderMaxPixCount, long hitfinderLocalBGRadius, float hitfinderMinPeakSeparation) {
+template<class T>
+int peakfinder6(tPeakList *peaklist, T *data, char *mask, long asic_nx, long asic_ny, long nasics_x, long nasics_y, float ADCthresh, float hitfinderMinSNR, long hitfinderMinPixCount, long hitfinderMaxPixCount, long hitfinderLocalBGRadius, float hitfinderMinPeakSeparation) {
 
 	// Derived values
 	long	pix_nx = asic_nx*nasics_x;
@@ -1492,8 +1497,8 @@ int peakfinder6(tPeakList *peaklist, float *data, char *mask, long asic_nx, long
 	/*
 	 *	Create a buffer for image data so we don't nuke the main image by mistake
 	 */
-	float *temp = (float*) calloc(pix_nn, sizeof(float));
-	memcpy(temp, data, pix_nn*sizeof(float));
+	T *temp = (T*) calloc(pix_nn, sizeof(T));
+	memcpy(temp, data, pix_nn*sizeof(T));
 	
 	
 	/*
@@ -1666,12 +1671,16 @@ nohit:
 }
 
 
+template int peakfinder6<float>(tPeakList*, float*, char*, long, long, long, long, float, float, long, long, long, float);
+template int peakfinder6<uint16_t>(tPeakList*, uint16_t*, char*, long, long, long, long, float, float, long, long, long, float);
+template int peakfinder6<uint32_t>(tPeakList*, uint32_t*, char*, long, long, long, long, float, float, long, long, long, float);
 
 
 /* Calculate signal-to-noise ratio for the central pixel, using a square
  * concentric annulus */
 
-int box_snr(float * im, char* mask, int center, int radius, int thickness,
+template<class T>
+int box_snr(T * im, char* mask, int center, int radius, int thickness,
             int stride, float * SNR, float * background, float * backgroundSigma)
 {
 

@@ -13,8 +13,10 @@
 
 // peakfinders.cpp
 int peakfinder3(tPeakList*, float*, char*, long, long, long, long, float, float, long, long, long);
-int peakfinder6(tPeakList*, float*, char*, long, long, long, long, float, float, long, long, long, float);
-int peakfinder8(tPeakList*, float*, char*, float*, long, long, long, long, float, float, long, long, long);
+template<class T>
+int peakfinder6(tPeakList*, T*, char*, long, long, long, long, float, float, long, long, long, float);
+template<class T>
+int peakfinder8(tPeakList*, T*, char*, float*, long, long, long, long, float, float, long, long, long);
 int peakfinder8old(tPeakList*, float*, char*, float*, long, long, long, long, float, float, long, long, long);
 int killNearbyPeaks(tPeakList*, float );
 

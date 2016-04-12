@@ -48,13 +48,14 @@ public:
 		hitfinderDmax = Dmax;
 	}
 
+	template<class T>
 	boost::python::list run(int asic_nx, int asic_ny, 
-							pyublas::numpy_vector<float> data,
+							pyublas::numpy_vector<T> data,
 							float beam_x, float beam_y, float wavelength,
-							float distance, float pixel_size) {
+							float distance, float pixel_size, int algorithm) {
         const long pix_nn = asic_nx * asic_ny;
         const long nasics_x = 1, nasics_y = 1;
-
+		assert(algorithm == 6 || algorithm == 8);
 		tPeakList peaklist;
 		allocatePeakList(&peaklist, 500);
 
@@ -73,10 +74,13 @@ public:
 
 		// Reference: source/libcheetah/src/peakfinders.cpp
 		
-		long nPeaks = peakfinder8(&peaklist, &data[0], mask, pix_r,
-								  asic_nx, asic_ny, nasics_x, nasics_y,
-								  hitfinderADCthresh, hitfinderMinSNR, hitfinderMinPixCount,
-								  hitfinderMaxPixCount, hitfinderLocalBGRadius);
+		long nPeaks = algorithm == 8 ?  peakfinder8<T>(&peaklist, &data[0], mask, pix_r,
+													   asic_nx, asic_ny, nasics_x, nasics_y,
+													   hitfinderADCthresh, hitfinderMinSNR, hitfinderMinPixCount,
+													   hitfinderMaxPixCount, hitfinderLocalBGRadius)
+			: peakfinder6<T>(&peaklist, &data[0], mask, asic_nx, asic_ny, nasics_x, nasics_y,
+							 hitfinderADCthresh, hitfinderMinSNR, hitfinderMinPixCount,
+							 hitfinderMaxPixCount, hitfinderLocalBGRadius, hitfinderMinPeakSeparation);
 
         /*
          *      Too many peaks for the peaklist counter?
@@ -167,9 +171,22 @@ BOOST_PYTHON_MODULE(cheetah_ext)
 			 (bp::arg("ADCthresh")=5, bp::arg("MinSNR")=8, bp::arg("MinPixCount")=2,
 			  bp::arg("MaxPixCount")=40, bp::arg("LocalBGRadius")=2, bp::arg("MinPeakSeparation")=0,
 			  bp::arg("Dmin")=5, bp::arg("Dmax")=30))
-		.def("run", &CheetahSinglePanel::run,
+		.def("run_float", &CheetahSinglePanel::run<float>,
 			 (bp::arg("asic_nx"), bp::arg("asic_ny"), bp::arg("data"),
 			  bp::arg("beam_x"), bp::arg("beam_y"), bp::arg("wavelength"),
-			  bp::arg("distance"), bp::arg("pixel_size")))
+			  bp::arg("distance"), bp::arg("pixel_size"),
+			  bp::arg("algorithm")))
+		.def("run_uint16", &CheetahSinglePanel::run<uint16_t>,
+			 (bp::arg("asic_nx"), bp::arg("asic_ny"), bp::arg("data"),
+			  bp::arg("beam_x"), bp::arg("beam_y"), bp::arg("wavelength"),
+			  bp::arg("distance"), bp::arg("pixel_size"),
+			  bp::arg("algorithm")))
+		.def("run_uint32", &CheetahSinglePanel::run<uint32_t>,
+			 (bp::arg("asic_nx"), bp::arg("asic_ny"), bp::arg("data"),
+			  bp::arg("beam_x"), bp::arg("beam_y"), bp::arg("wavelength"),
+			  bp::arg("distance"), bp::arg("pixel_size"),
+			  bp::arg("algorithm")))
+
+
 		;
 }

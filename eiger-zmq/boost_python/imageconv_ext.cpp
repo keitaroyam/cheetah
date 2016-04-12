@@ -16,6 +16,7 @@ g++ -shared imageconv_ext.o -o imageconv_ext.so -L/oys/xtal/cctbx/build/lib -lbo
 
 namespace bp = boost::python;
 
+template<class T>
 class MyImage {
 
 public:
@@ -55,13 +56,13 @@ public:
 	}
 
 	//data_t *d_rawdata;
-	pyublas::numpy_vector<float> rawdata;
+	pyublas::numpy_vector<T> rawdata;
 	std::string vendortype;
 	double brightness;
 	data_t saturation;
 public:
 
-	MyImage(pyublas::numpy_vector<float> rawdata, 
+	MyImage(pyublas::numpy_vector<T> rawdata, 
 			int width, int height,
 			const std::string& vendortype, const double& brightness = 1.0,
 			const data_t& saturation = 65535):
@@ -356,10 +357,11 @@ private:
   }
 };
 
+template<class T>
 struct my_image_wrapper {
 
-	typedef MyImage w_t;
-	typedef pyublas::numpy_vector<float> array_t;
+	typedef MyImage<T> w_t;
+	typedef pyublas::numpy_vector<T> array_t;
 
 	static void wrap (const char* python_name){
 		bp::class_<w_t >(python_name, bp::no_init)
@@ -387,5 +389,6 @@ struct my_image_wrapper {
 
 BOOST_PYTHON_MODULE(imageconv_ext)
 {
-	my_image_wrapper::wrap("MyImage");
+	my_image_wrapper<uint16_t>::wrap("MyImage_uint16");
+	my_image_wrapper<uint32_t>::wrap("MyImage_uint32");
 }

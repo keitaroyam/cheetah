@@ -25,7 +25,7 @@ cheetah {
  MaxPixCount = 40
   .type = int
  LocalBGRadius = 2
-  .type = float
+  .type = int
  MinPeakSeparation = 0
   .type = float
 }
