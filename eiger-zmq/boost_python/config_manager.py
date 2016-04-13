@@ -20,7 +20,7 @@ cheetah {
   .type = float
  MinSNR = 8
   .type = float
- MinPixCount = 2
+ MinPixCount = 3
   .type = int
  MaxPixCount = 40
   .type = int
@@ -28,6 +28,9 @@ cheetah {
   .type = int
  MinPeakSeparation = 0
   .type = float
+ algorithm = 8
+  .type = int
+  .help = 6 or 8
 }
 """
 

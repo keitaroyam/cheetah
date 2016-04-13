@@ -229,6 +229,22 @@ def worker(wrk_num, ventilator_host, eiger_host, result_host, pub_host, mode, cu
             print "Wrkr%3d Frame %6d Done in %.2f msec " % (wrk_num, header["frame"], eltime*1.e3)
             results_sender.send_pyobj(result)
 
+        if socks.get(control_receiver) == zmq.POLLIN:
+            msg = control_receiver.recv_pyobj()
+            if "params" in msg:
+                params = msg["params"][("BL32XU", "EIGER9M", None, None)]
+                cheetah.set_params(ADCthresh=params.cheetah.ADCthresh,
+                                   MinSNR=params.cheetah.MinSNR,
+                                   MinPixCount=params.cheetah.MinPixCount,
+                                   MaxPixCount=params.cheetah.MaxPixCount,
+                                   LocalBGRadius=params.cheetah.LocalBGRadius,
+                                   MinPeakSeparation=params.cheetah.MinPeakSeparation,
+                                   Dmin=params.distl.res.outer,
+                                   Dmax=params.distl.res.inner)
+                algorithm = params.cheetah.algorithm
+                print "worker %d: Parameters updated" % wrk_num
+
+
     print "Worker %d finished." % wrk_num
 # worker()
 
