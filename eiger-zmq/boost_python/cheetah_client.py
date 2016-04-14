@@ -120,15 +120,57 @@ def write_zoomed_image(data, vendortype, width, height, beamx, beamy,
     return x0, y0, mag
 # write_zoomed_image()
 
-def worker(wrk_num, ventilator_host, eiger_host, result_host, pub_host, mode, cut_roi, algorithm):
+def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah):
+    beamx, beamy = header["beam_center_x"], header["beam_center_y"]
+
+    # Cut ROI
+    if cut_roi:
+        r_max = header["distance"] * math.tan(2.*math.asin(header["wavelength"]/2./params.distl.res.outer)) / header["pixel_size_x"]
+        roidata = data[max(0,beamy-r_max):min(beamy+r_max,data.shape[0]-1), max(0,beamx-r_max):min(beamx+r_max,data.shape[1]-1)]
+        if roidata.shape[0] < r_max and beamy-r_max < 0: beamy = roidata.shape[0] - r_max
+        else: beamy = r_max
+        if roidata.shape[1] < r_max and beamx-r_max < 0: beamx = roidata.shape[1] - r_max
+        else: beamx = r_max
+        print "ROI cut:", roidata.shape
+    else:
+        roidata = data
+
+    if roidata.dtype == numpy.uint32: cheetah_run = cheetah.run_uint32 
+    elif roidata.dtype == numpy.uint16: cheetah_run = cheetah.run_uint16
+
+    ret = cheetah_run(roidata.shape[1], roidata.shape[0], roidata,
+                      beamx, beamy,
+                      header["wavelength"], header["distance"], header["pixel_size_x"],
+                      algorithm=algorithm)
+
+    x0, y0, mag = write_zoomed_image(data, vendortype="EIGER", width=data.shape[1], height=data.shape[0],
+                                     beamx=header["beam_center_x"], beamy=header["beam_center_y"],
+                                     distance=header["distance"], wavelength=header["wavelength"],
+                                     pixel_size=header["pixel_size_x"],
+                                     thumb_width=600, d_min=5,
+                                     jpgout=os.path.join(work_dir, os.path.basename(imgfile)+".jpg"),
+                                     brightness=150, color_scheme=0)
+
+    result = make_result(ret)
+    result["thumb_posmag"] = (x0, y0, mag)
+    result["work_dir"] = work_dir
+    result["imgfile"] = imgfile
+    result["template"] = "%s_%s.img"%(str(header["file_prefix"]), "?"*6)
+    result["idx"] = header["frame"]+1
+    return result
+# cheetah_worker()
+
+def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, cut_roi, algorithm):
     """
     The code taken from yamtbx/dataproc/myspotfinder/command_line/spot_finder_backend.py (New BSD License)
     """
     context = zmq.Context()
  
     # Set up a channel to receive work from the ventilator
-    work_receiver = context.socket(zmq.PULL)
-    work_receiver.connect("tcp://%s"%ventilator_host)
+    work_receivers = []
+    for vh in ventilator_hosts.split(","):
+        work_receivers.append(context.socket(zmq.PULL))
+        work_receivers[-1].connect("tcp://%s"%vh)
 
     eiger_receiver = context.socket(zmq.PULL)
     eiger_receiver.connect("tcp://%s"%eiger_host)
@@ -144,7 +186,7 @@ def worker(wrk_num, ventilator_host, eiger_host, result_host, pub_host, mode, cu
  
     # Set up a poller to multiplex the work receiver and control receiver channels
     poller = zmq.Poller()
-    poller.register(work_receiver, zmq.POLLIN)
+    for wr in work_receivers: poller.register(wr, zmq.POLLIN)
     poller.register(control_receiver, zmq.POLLIN)
     if mode == "eiger_streaming":
         poller.register(eiger_receiver, zmq.POLLIN)
@@ -167,7 +209,39 @@ def worker(wrk_num, ventilator_host, eiger_host, result_host, pub_host, mode, cu
 
     while True:
         socks = dict(poller.poll())
- 
+
+        # the message from ventilator
+        if any(map(lambda x: socks.get(x)==zmq.POLLIN, work_receivers)):
+            work_receiver = filter(lambda x: socks.get(x)==zmq.POLLIN, work_receivers)[0]
+            msg = work_receiver.recv_json()
+            imgfile = str(msg["imgfile"])
+            header = msg["header"]
+            startt = time.time()
+
+            if "h5master" in msg: #imgfile.endswith(".h5"):
+                from yamtbx.dataproc import eiger
+                data = eiger.extract_data(str(msg["h5master"]), msg["idx"])
+                data[data==2**(data.dtype.itemsize*8)-1] = 0
+            else:
+                raise "Unsupported type"
+
+            work_dir = os.path.join(os.path.dirname(imgfile), "_spotfinder")
+            params.work_dir = work_dir
+            
+            if os.path.exists(work_dir): assert os.path.isdir(work_dir)
+            else:
+                try: os.mkdir(work_dir)
+                except: pass
+
+            result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah)
+            result["starttime"] = startt
+            result["endtime"] = time.time()
+            result["params"] = params
+            eltime = time.time()-startt
+            print "Wrkr%3d Frame %6d Done in %.2f msec " % (wrk_num, header["frame"], eltime*1.e3)
+            results_sender.send_pyobj(result)
+
+
         # the message from EIGER
         if socks.get(eiger_receiver) == zmq.POLLIN:
             frames = eiger_receiver.recv_multipart(copy = False)
@@ -187,45 +261,11 @@ def worker(wrk_num, ventilator_host, eiger_host, result_host, pub_host, mode, cu
             imgfile = os.path.join(header["data_directory"],
                                    "%s_%.6d.img"%(str(header["file_prefix"]), header["frame"]+1))
 
-            beamx, beamy = header["beam_center_x"], header["beam_center_y"]
-            # Cut ROI
-            if cut_roi:
-                r_max = header["distance"] * math.tan(2.*math.asin(header["wavelength"]/2./params.distl.res.outer)) / header["pixel_size_x"]
-                roidata = data[max(0,beamy-r_max):min(beamy+r_max,data.shape[0]-1), max(0,beamx-r_max):min(beamx+r_max,data.shape[1]-1)]
-                if roidata.shape[0] < r_max and beamy-r_max < 0: beamy = roidata.shape[0] - r_max
-                else: beamy = r_max
-                if roidata.shape[1] < r_max and beamx-r_max < 0: beamx = roidata.shape[1] - r_max
-                else: beamx = r_max
-                print "ROI cut:", roidata.shape
-            else:
-                roidata = data
-
-            if roidata.dtype == numpy.uint32: cheetah_run = cheetah.run_uint32 
-            elif roidata.dtype == numpy.uint16: cheetah_run = cheetah.run_uint16
-            
-            ret = cheetah_run(roidata.shape[1], roidata.shape[0], roidata,
-                              beamx, beamy,
-                              header["wavelength"], header["distance"], header["pixel_size_x"],
-                              algorithm=algorithm)
-
-            x0, y0, mag = write_zoomed_image(data, vendortype="EIGER", width=data.shape[1], height=data.shape[0],
-                                             beamx=header["beam_center_x"], beamy=header["beam_center_y"],
-                                             distance=header["distance"], wavelength=header["wavelength"],
-                                             pixel_size=header["pixel_size_x"],
-                                             thumb_width=600, d_min=5,
-                                             jpgout=os.path.join(work_dir, os.path.basename(imgfile)+".jpg"),
-                                             brightness=150, color_scheme=0)
-
-            result = make_result(ret)
-            result["thumb_posmag"] = (x0, y0, mag)
-            result["work_dir"] = work_dir
-            result["params"] = params
-            result["imgfile"] = imgfile
-            result["template"] = "%s_%s.img"%(str(header["file_prefix"]), "?"*6)
-            result["idx"] = header["frame"]+1
-            eltime = time.time()-startt
+            result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah)
             result["starttime"] = startt
             result["endtime"] = time.time()
+            result["params"] = params
+            eltime = time.time()-startt
             print "Wrkr%3d Frame %6d Done in %.2f msec " % (wrk_num, header["frame"], eltime*1.e3)
             results_sender.send_pyobj(result)
 
@@ -254,7 +294,7 @@ def run(opts):
     pp = []
     for i in xrange(opts.nproc):
         p = subprocess.Popen(["%s"%sys.executable, "-"], shell=True, stdin=subprocess.PIPE)
-        p.stdin.write("from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_host, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm),))
+        p.stdin.write("from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm),))
         p.stdin.close()
         pp.append(p)
     
@@ -267,7 +307,7 @@ if __name__ == "__main__":
     parser = optparse.OptionParser(usage="usage: %prog [options] coordinates...")
 
     parser.add_option("--eiger-host", action="store", dest="eiger_host", default="192.168.163.204:9999")
-    parser.add_option("--vent-host", action="store", dest="ventilator_host", default="127.0.0.1:5557")
+    parser.add_option("--vent-hosts", action="store", dest="ventilator_hosts", default="127.0.0.1:5556,127.0.0.1:5557")
     parser.add_option("--result-host", action="store", dest="result_host", default="127.0.0.1:5558")
     parser.add_option("--pub-host", action="store", dest="pub_host", default="127.0.0.1:5559")
     parser.add_option("--mode", action="store", dest="mode", default="eiger_streaming")
