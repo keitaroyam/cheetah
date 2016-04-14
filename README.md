@@ -1,3 +1,17 @@
+# Note
+
+This is a personal **unofficial** repository of Cheetah.
+The official Website is http://www.desy.de/~barty/cheetah/,
+and the repository is https://github.com/antonbarty/cheetah/.
+
+Here functions for Eiger streaming data specific for SPring-8 MX beamlines are being developed (see eiger-zmq branch).
+We are using Cheetah's peakfind functions and expose them to Python using Boost.Python.
+We started development by merging eiger branch of [biochem-fan's forked repository](https://github.com/biochem-fan/cheetah).
+
+-----------------------------
+
+The original README follows.
+
 # Cheetah Installation Instructions
 
 ### Preparing for the build
