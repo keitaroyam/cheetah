@@ -31,6 +31,9 @@ public:
 		const double adjlevel = 0.4;
 
 		std::vector<data_t> roi(w*h, 0);
+		const bool is_eiger = vendortype=="EIGER";
+		const bool is_pilatus = (vendortype=="Pilatus-6M"||vendortype=="Pilatus-2M"||vendortype=="Pilatus-300K");
+		int dead_area = 0;
 
 		for (int y_ = 0; y_ < h; ++y_)
 			for (int x_ = 0; x_ < w; ++x_) {
@@ -39,12 +42,13 @@ public:
 				const int i_ = y_*w + x_;
 
 				roi[i_] = rawdata[i];
-			}
-    
-		const bool is_pilatus = (vendortype=="Pilatus-6M"||vendortype=="Pilatus-2M"||vendortype=="Pilatus-300K");
 
-		// count dead area. should be count_if (<0)
-		const int dead_area = is_pilatus ? std::count(roi.begin(), roi.end(), -1) : 0;
+				if (is_eiger && !((y%551<514) && (x%1040<1030)))
+					++dead_area;
+				else if (is_pilatus && roi[i_] < 0)
+					++dead_area;
+			}
+
 		const int saturated_num = std::count_if(roi.begin(), roi.end(), 
 												std::bind2nd(std::greater_equal<int>(), saturation));
 		const int nth_offset = 0.9 * (w*h - saturated_num) + 0.1 * dead_area;
