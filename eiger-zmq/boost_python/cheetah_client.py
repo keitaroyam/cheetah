@@ -12,6 +12,7 @@ import time
 import subprocess
 
 from cheetah_ext import CheetahSpot, CheetahSinglePanel
+from yamtbx.dataproc.myspotfinder import shikalog
 import imageconv_ext 
 import config_manager
 
@@ -160,12 +161,13 @@ def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah)
     return result
 # cheetah_worker()
 
-def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, cut_roi, algorithm):
+def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, cut_roi, algorithm, bl):
     """
     The code taken from yamtbx/dataproc/myspotfinder/command_line/spot_finder_backend.py (New BSD License)
     """
     context = zmq.Context()
- 
+    shikalog.config(bl, "cheetah")
+
     # Set up a channel to receive work from the ventilator
     work_receivers = []
     for vh in ventilator_hosts.split(","):
@@ -205,7 +207,7 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
                        Dmin=params.distl.res.outer,
                        Dmax=params.distl.res.inner)
 
-    print "worker %d ready" % wrk_num
+    shikalog.info("worker %d ready" % wrk_num)
 
     while True:
         socks = dict(poller.poll())
@@ -238,7 +240,7 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
             result["endtime"] = time.time()
             result["params"] = params
             eltime = time.time()-startt
-            print "Wrkr%3d Frame %6d Done in %.2f msec " % (wrk_num, header["frame"], eltime*1.e3)
+            shikalog.info("Wrkr%3d %s done in %.2f msec " % (wrk_num, imgfile, eltime*1.e3))
             results_sender.send_pyobj(result)
 
 
@@ -266,7 +268,7 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
             result["endtime"] = time.time()
             result["params"] = params
             eltime = time.time()-startt
-            print "Wrkr%3d Frame %6d Done in %.2f msec " % (wrk_num, header["frame"], eltime*1.e3)
+            shikalog.info("Wrkr%3d %s Done in %.2f msec " % (wrk_num, imgfile, eltime*1.e3))
             results_sender.send_pyobj(result)
 
         if socks.get(control_receiver) == zmq.POLLIN:
@@ -282,10 +284,10 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
                                    Dmin=params.distl.res.outer,
                                    Dmax=params.distl.res.inner)
                 algorithm = params.cheetah.algorithm
-                print "worker %d: Parameters updated" % wrk_num
+                shikalog.info("worker %d: Parameters updated" % wrk_num)
 
 
-    print "Worker %d finished." % wrk_num
+    shikalog.info("Worker %d finished." % wrk_num)
 # worker()
 
 def run(opts):
@@ -294,7 +296,7 @@ def run(opts):
     pp = []
     for i in xrange(opts.nproc):
         p = subprocess.Popen(["%s"%sys.executable, "-"], shell=True, stdin=subprocess.PIPE)
-        p.stdin.write("from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm),))
+        p.stdin.write("from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm, opts.bl),))
         p.stdin.close()
         pp.append(p)
     
@@ -307,13 +309,14 @@ if __name__ == "__main__":
     parser = optparse.OptionParser(usage="usage: %prog [options] coordinates...")
 
     parser.add_option("--eiger-host", action="store", dest="eiger_host", default="192.168.163.204:9999")
-    parser.add_option("--vent-hosts", action="store", dest="ventilator_hosts", default="127.0.0.1:5556,127.0.0.1:5557")
+    parser.add_option("--vent-hosts", action="store", dest="ventilator_hosts", default="192.168.163.10:5556,127.0.0.1:5557")
     parser.add_option("--result-host", action="store", dest="result_host", default="127.0.0.1:5558")
-    parser.add_option("--pub-host", action="store", dest="pub_host", default="127.0.0.1:5559")
+    parser.add_option("--pub-host", action="store", dest="pub_host", default="192.168.163.10:5559")
     parser.add_option("--mode", action="store", dest="mode", default="eiger_streaming")
     parser.add_option("--nproc", action="store", dest="nproc", type=int, default=16)
     parser.add_option("--cut-roi", action="store_true", dest="cut_roi")
     parser.add_option("--algorithm", action="store", dest="algorithm", type=int, default=8)
+    parser.add_option("--bl", action="store", dest="bl", default="32xu")
 
 
     opts, args = parser.parse_args(sys.argv)
