@@ -63,11 +63,38 @@ def read_eiger_stream_data(frames, bss_job_mode=4):
     return header, data
 # read_eiger_stream_data()
 
-def make_result(retin):
+def software_binning(data, binning):
+    u = l = 0
+    b = r = None
+    newshape = [data.shape[0]//binning, data.shape[1]//binning]
+    if data.shape[0]%binning > 0:
+        res = data.shape[0]%binning
+        u = res//2 # upper
+        b = res - u # bottom
+    if data.shape[1]%binning > 0:
+        res = data.shape[1]%binning
+        l = res//2
+        r = res - l
+
+    newdata = data[u:-b, l:-r]
+
+    # Reference: http://stackoverflow.com/a/8090605
+    newdata = newdata.reshape(newshape[0], binning, newshape[1], -1).sum(3).sum(1).astype(numpy.uint32)
+
+    # xy transformation
+    f_xyconv = lambda x,y: ((x-u)/binning, (y-l)/binning)
+    f_xyconvinv = lambda x,y: (x*binning+u, y*binning+l)
+
+    return newdata, f_xyconv, f_xyconvinv
+# software_binning()
+
+def make_result(retin, f_trans=None):
     ret = dict(spots=[], lookup={})
 
-    for x in retin:
-        ret["spots"].append((x.peak_com_y, x.peak_com_x, x.peak_snr, x.peak_com_res))
+    for r in retin:
+        x, y = r.peak_com_x, r.peak_com_y
+        if f_trans: x, y = f_trans(x,y)
+        ret["spots"].append((y, x, r.peak_snr, r.peak_com_res))
 
     ret["lookup"]["cheetah"] = tuple(range(len(retin)))
 
@@ -121,9 +148,9 @@ def write_zoomed_image(data, vendortype, width, height, beamx, beamy,
     return x0, y0, mag
 # write_zoomed_image()
 
-def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah):
+def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1):
     beamx, beamy = header["beam_center_x"], header["beam_center_y"]
-
+    pixel_size = header["pixel_size_x"]
     # Cut ROI
     if cut_roi:
         r_max = header["distance"] * math.tan(2.*math.asin(header["wavelength"]/2./params.distl.res.outer)) / header["pixel_size_x"]
@@ -136,12 +163,20 @@ def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah)
     else:
         roidata = data
 
+    # Binning
+    if binning > 1:
+        roidata, f_xyconv, f_xyconvinv = software_binning(data, binning)
+        (beamx, beamy) = f_xyconv(beamx, beamy)
+        pixel_size *= binning
+    else:
+        f_xyconvinv = None
+
     if roidata.dtype == numpy.uint32: cheetah_run = cheetah.run_uint32 
     elif roidata.dtype == numpy.uint16: cheetah_run = cheetah.run_uint16
 
     ret = cheetah_run(roidata.shape[1], roidata.shape[0], roidata,
                       beamx, beamy,
-                      header["wavelength"], header["distance"], header["pixel_size_x"],
+                      header["wavelength"], header["distance"], pixel_size,
                       algorithm=algorithm)
 
     x0, y0, mag = write_zoomed_image(data, vendortype="EIGER", width=data.shape[1], height=data.shape[0],
@@ -152,7 +187,7 @@ def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah)
                                      jpgout=os.path.join(work_dir, os.path.basename(imgfile)+".jpg"),
                                      brightness=150, color_scheme=0)
 
-    result = make_result(ret)
+    result = make_result(ret, f_xyconvinv)
     result["thumb_posmag"] = (x0, y0, mag)
     result["work_dir"] = work_dir
     result["imgfile"] = imgfile
@@ -235,7 +270,8 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
                 try: os.mkdir(work_dir)
                 except: pass
 
-            result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah)
+            result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
+                                    params.cheetah.binning)
             result["starttime"] = startt
             result["endtime"] = time.time()
             result["params"] = params
@@ -250,7 +286,7 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
             startt = time.time()
             header, data = read_eiger_stream_data(frames)
             if None in (header, data): continue
-            
+
             work_dir = os.path.join(str(header["data_directory"]), "_spotfinder")
             params.work_dir = work_dir
             if os.path.exists(work_dir): assert os.path.isdir(work_dir)
@@ -263,7 +299,8 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
             imgfile = os.path.join(header["data_directory"],
                                    "%s_%.6d.img"%(str(header["file_prefix"]), header["frame"]+1))
 
-            result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah)
+            result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
+                                    params.cheetah.binning)
             result["starttime"] = startt
             result["endtime"] = time.time()
             result["params"] = params

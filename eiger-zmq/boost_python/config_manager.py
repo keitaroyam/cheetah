@@ -31,6 +31,9 @@ cheetah {
  algorithm = 8
   .type = int
   .help = 6 or 8
+ binning = 1
+  .type = int(value_min=1)
+  .help = software binning.
 }
 """
 
