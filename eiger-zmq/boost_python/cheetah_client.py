@@ -8,6 +8,7 @@ import numpy
 import pyublas
 import math
 import time
+import traceback
 #from multiprocessing import Process
 import subprocess
 
@@ -148,7 +149,7 @@ def write_zoomed_image(data, vendortype, width, height, beamx, beamy,
     return x0, y0, mag
 # write_zoomed_image()
 
-def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1):
+def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1, jpgdir=None):
     beamx, beamy = header["beam_center_x"], header["beam_center_y"]
     pixel_size = header["pixel_size_x"]
     # Cut ROI
@@ -173,18 +174,20 @@ def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
 
     if roidata.dtype == numpy.uint32: cheetah_run = cheetah.run_uint32 
     elif roidata.dtype == numpy.uint16: cheetah_run = cheetah.run_uint16
-
+    else: shikalog.error("Unsupported dtype: %s"%roidata.dtype)
+        
     ret = cheetah_run(roidata.shape[1], roidata.shape[0], roidata,
                       beamx, beamy,
                       header["wavelength"], header["distance"], pixel_size,
                       algorithm=algorithm)
 
+    if jpgdir is None: jpgdir = work_dir
     x0, y0, mag = write_zoomed_image(data, vendortype="EIGER", width=data.shape[1], height=data.shape[0],
                                      beamx=header["beam_center_x"], beamy=header["beam_center_y"],
                                      distance=header["distance"], wavelength=header["wavelength"],
                                      pixel_size=header["pixel_size_x"],
                                      thumb_width=600, d_min=5,
-                                     jpgout=os.path.join(work_dir, os.path.basename(imgfile)+".jpg"),
+                                     jpgout=os.path.join(jpgdir, os.path.basename(imgfile)+".jpg"),
                                      brightness=150, color_scheme=0)
 
     result = make_result(ret, f_xyconvinv)
@@ -258,7 +261,8 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
             if "h5master" in msg: #imgfile.endswith(".h5"):
                 from yamtbx.dataproc import eiger
                 data = eiger.extract_data(str(msg["h5master"]), msg["idx"])
-                data[data==2**(data.dtype.itemsize*8)-1] = 0
+                data[data<0] = 0
+                data = data.astype(numpy.uint32)
             else:
                 raise "Unsupported type"
 
@@ -270,14 +274,17 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
                 try: os.mkdir(work_dir)
                 except: pass
 
-            result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
-                                    params.cheetah.binning)
-            result["starttime"] = startt
-            result["endtime"] = time.time()
-            result["params"] = params
-            eltime = time.time()-startt
-            shikalog.info("Wrkr%3d %s done in %.2f msec " % (wrk_num, imgfile, eltime*1.e3))
-            results_sender.send_pyobj(result)
+            try:
+                result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
+                                        params.cheetah.binning)
+                result["starttime"] = startt
+                result["endtime"] = time.time()
+                result["params"] = params
+                eltime = time.time()-startt
+                shikalog.info("Wrkr%3d %s done in %.2f msec " % (wrk_num, imgfile, eltime*1.e3))
+                results_sender.send_pyobj(result)
+            except:
+                shikalog.error(traceback.format_exc())
 
 
         # the message from EIGER
@@ -299,8 +306,11 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
             imgfile = os.path.join(header["data_directory"],
                                    "%s_%.6d.img"%(str(header["file_prefix"]), header["frame"]+1))
 
+            jpgdir = os.path.join(work_dir, "thumb_%s_%.3d" % (str(header["file_prefix"]), (header["frame"]+1)//1000))
+            try: os.mkdir(jpgdir)
+            except: pass
             result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
-                                    params.cheetah.binning)
+                                    params.cheetah.binning, jpgdir=jpgdir)
             result["starttime"] = startt
             result["endtime"] = time.time()
             result["params"] = params
@@ -334,6 +344,7 @@ def run(opts):
     for i in xrange(opts.nproc):
         p = subprocess.Popen(["%s"%sys.executable, "-"], shell=True, stdin=subprocess.PIPE)
         p.stdin.write("from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm, opts.bl),))
+        print "from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm, opts.bl),)
         p.stdin.close()
         pp.append(p)
     
