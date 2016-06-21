@@ -1,0 +1,7 @@
+#!/bin/sh
+
+root=`dirname $0`/../boost_python
+export LD_LIBRARY_PATH=$root:$LD_LIBRARY_PATH
+export PYTHONPATH=$root:$PYTHONPATH
+
+yamtbx.python $root/cheetah_client.py $@
