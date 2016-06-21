@@ -6,7 +6,7 @@ import numpy
 import pyublas
 import math
 import time
-#from multiprocessing import Process, Queue
+from multiprocessing import Process, Queue
 
 from cheetah_ext import CheetahSpot, CheetahSinglePanel
 from yamtbx.dataproc import cbf
@@ -21,9 +21,7 @@ def make_result(retin, f_trans=None):
     for r in retin:
         x, y = r.peak_com_x, r.peak_com_y
         if f_trans: x, y = f_trans(x,y)
-        ret["spots"].append((y, x, r.peak_snr, r.peak_com_res))
-
-    ret["lookup"]["cheetah"] = tuple(range(len(retin)))
+        ret["spots"].append((x, y, r.peak_snr, r.peak_com_res))
 
     return ret
 # make_distl_stats_dict()
@@ -127,19 +125,29 @@ def run(opts, args):
         p.start()
         pp.append(p) 
 
+    results = {}
+
+    while any(map(lambda p: p.is_alive(), pp)):
+        while not queue.empty():
+            ret = queue.get()
+            results[ret["frame"]] = ret
+
     for p in pp: p.join()
 
-    return
+    if opts.gen_adx:
+        for frame in sorted(results):
+            ret = results[frame]
+            adx_out = open(os.path.basename(frame)+".adx", "w")
+            for x,y,snr,d in ret["spots"]: adx_out.write("%6d %6d %.2e\n" % (x,y,snr))
+            adx_out.close()
 
-    n_spots = []
-    while not queue.empty():
-        ret = queue.get()
-        n_spots.append((ret["frame"], len(ret["spots"])))
-    
-    n_spots.sort(key=lambda x:x[0])
-    ofs.write("frame nspots\n")
-    for frame, nsp in n_spots: ofs.write("%s %6d\n"%(frame, nsp))
 
+    ofs.write("file nspots total_snr\n")
+    for frame in sorted(results):
+        ret = results[frame]
+        n_spots = len(ret["spots"])
+        total_snr = sum(map(lambda x: x[2], ret["spots"]))
+        ofs.write("%s %6d %.3e\n"%(frame, n_spots, total_snr))
     
 if __name__ == "__main__":
     import sys
@@ -147,9 +155,10 @@ if __name__ == "__main__":
 
     parser = optparse.OptionParser(usage="usage: %prog [options] .img or .cbf files...")
 
-    parser.add_option("--nproc", action="store", dest="nproc", type=int, default=16)
+    parser.add_option("--nproc", action="store", dest="nproc", type=int, default=1)
     parser.add_option("--cut-roi", action="store_true", dest="cut_roi")
-    parser.add_option("--output", action="store", dest="output", default="cheetah_nspots.dat")
+    parser.add_option("--output", action="store", dest="output", default="cheetah.dat")
+    parser.add_option("--gen-adx", action="store_true", dest="gen_adx")
 
     parser.add_option("--dmin", action="store", dest="d_min", type=float, default=5)
     parser.add_option("--dmax", action="store", dest="d_max", type=float, default=30)
