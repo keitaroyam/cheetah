@@ -28,3 +28,9 @@ g++ -shared cheetah_ext.o  -o cheetah_ext.so -L/oys/xtal/cctbx/build/lib -lboost
 Currently it is designed to use at SPring-8 BL32XU only, but it may easily be customized to other environment.
 
 cheetah_client.py receives frames from Eiger via Zmq and find peaks. The results are sent to other program via Zmq, which will be available in yamtbx.
+
+For testing purpose, eiger-zmq/bin/cheetah.local (for hdf5) and cheetah.local_singles	(for cbf/img files) can be used.
+```
+$ cheetah.local_singles	*.img [--gen-adx to generate .adx file]
+```
+For other options, run with `-h` option.
