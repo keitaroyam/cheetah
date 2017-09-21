@@ -16,6 +16,7 @@ from cheetah_ext import CheetahSpot, CheetahSinglePanel
 from yamtbx.dataproc.myspotfinder import shikalog
 import imageconv_ext 
 import config_manager
+import tempfile
 
 import libtbx.phil
 
@@ -102,37 +103,43 @@ def make_result(retin, f_trans=None):
     return ret
 # make_distl_stats_dict()
 
-def write_zoomed_image(data, vendortype, width, height, beamx, beamy,
-                       distance, wavelength, pixel_size, 
-                       thumb_width, d_min,
-                       jpgout, brightness=100, color_scheme=0):
+def zoomed_image(data, vendortype, width, height, beamx, beamy,
+                 distance, wavelength, pixel_size, 
+                 thumb_width, d_min,
+                 brightness=100, color_scheme=0, out_type="jpg"):
     """
     The code taken from yamtbx/dataproc/myspotfinder/spot_finder_for_grid_scan.py (New BSD License)
     """
 
+    assert out_type in ("jpg", "str")
+
     def get_zoom_box(img_w, img_h, x, y, boxsize=400, mag=16): # from viewer.image.get_zoom_box()
         n_pixels = int(math.ceil(boxsize / mag)+.5)
+        #shikalog.info("x,y,mag,n_pixels= %s" % ((x,y,mag,n_pixels),))
         x0 = min(img_w - n_pixels, int(math.floor(x - (n_pixels / 2))+.5))
         y0 = min(img_h - n_pixels, int(math.floor(y - (n_pixels / 2))+.5))
         return (x0, y0, n_pixels, n_pixels)
     # get_zoom_box()
 
     tw = thumb_width
-    mag = tw / width # Default
+    mag = tw / float(width) # Default
     if d_min is not None:
         try:
             clipsize = distance * math.tan(2.*math.asin(wavelength/2./d_min)) / pixel_size*2
             if clipsize > 0:
-                mag = tw / min(clipsize, width)
+                mag = tw / float(min(clipsize, width))
+                #mag = tw / float(clipsize) # SHOULD BE THIS!!!
         except ValueError:
             pass # Use default
 
     x0, y0, w, h = get_zoom_box(width, height, beamx, beamy, boxsize=tw, mag=mag)
     assert (w == h)
-    x0, y0 = max(x0, 0), max(y0, 0)
+    x0, y0 = max(x0, 0), max(y0, 0) ### SHOULD BE OMITTED!!
 
     if data.dtype == numpy.uint32: MyImage = imageconv_ext.MyImage_uint32
     elif data.dtype == numpy.uint16: MyImage = imageconv_ext.MyImage_uint16
+
+    imgdata = None
 
     try:
         img = MyImage(rawdata=data, width=width, height=height,
@@ -140,16 +147,34 @@ def write_zoomed_image(data, vendortype, width, height, beamx, beamy,
                       brightness=brightness/100.,
                       saturation=65535)
 
+        #shikalog.info("x0,y0,w,h,tw= %s" % ((x0,y0,w,h,tw),))
         img.prep_string_cropped_and_scaled(x0,y0,w,h,tw,tw)
-        img.save_as_jpeg(str(jpgout), tw, tw, quality=90)
+        if out_type == "jpg":
+            for i in xrange(100):
+                try:
+                    fd, jpgout = tempfile.mkstemp(suffix="cheetah.jpg", dir="/dev/shm")
+                    os.close(fd)
+                    img.save_as_jpeg(jpgout, tw, tw, quality=90)
+                    imgdata = open(jpgout, "rb").read()
+                    break
+                except RuntimeError, e:
+                    shikalog.warning(e.message)
+                    shikalog.warning("Failed to write %s. retrying (%.3d)" % (jpgout, i))
+                    time.sleep(0.1)
+                    if os.path.exists(jpgout): os.remove(jpgout)
+                finally:
+                    if os.path.exists(jpgout): os.remove(jpgout)
+        else:
+            imgdata = img.export_string
 
-    except ImportError:
-        pass
+    except Exception, e:
+        shikalog.error("Thumbnail creation failed")
+        shikalog.error("%s" % e.message)
 
-    return x0, y0, mag
-# write_zoomed_image()
+    return x0, y0, mag, imgdata
+# zoomed_image()
 
-def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1, jpgdir=None):
+def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1):
     beamx, beamy = header["beam_center_x"], header["beam_center_y"]
     pixel_size = header["pixel_size_x"]
     # Cut ROI
@@ -181,30 +206,34 @@ def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
                       header["wavelength"], header["distance"], pixel_size,
                       algorithm=algorithm)
 
-    if jpgdir is None: jpgdir = work_dir
-    x0, y0, mag = write_zoomed_image(data, vendortype="EIGER", width=data.shape[1], height=data.shape[0],
-                                     beamx=header["beam_center_x"], beamy=header["beam_center_y"],
-                                     distance=header["distance"], wavelength=header["wavelength"],
-                                     pixel_size=header["pixel_size_x"],
-                                     thumb_width=600, d_min=5,
-                                     jpgout=os.path.join(jpgdir, os.path.basename(imgfile)+".jpg"),
-                                     brightness=150, color_scheme=0)
+    x0, y0, mag, imgdata = zoomed_image(data, vendortype="EIGER", width=data.shape[1], height=data.shape[0],
+                                        beamx=header["beam_center_x"], beamy=header["beam_center_y"],
+                                        distance=header["distance"], wavelength=header["wavelength"],
+                                        pixel_size=header["pixel_size_x"],
+                                        thumb_width=600, d_min=5,
+                                        #jpgout=jpgout, #os.path.join(jpgdir, os.path.basename(imgfile)+".jpg"),
+                                        brightness=150, color_scheme=0, out_type="str")
 
     result = make_result(ret, f_xyconvinv)
     result["thumb_posmag"] = (x0, y0, mag)
     result["work_dir"] = work_dir
     result["imgfile"] = imgfile
     result["template"] = "%s_%s.img"%(str(header["file_prefix"]), "?"*6)
+    result["file_prefix"] = str(header["file_prefix"])
     result["idx"] = header["frame"]+1
+    #result["jpgdata"] = imgdata # in case of out_type="jpg"
+    result["thumbdata"] = imgdata
+    result["header"] = header
+
     return result
 # cheetah_worker()
 
-def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, cut_roi, algorithm, bl):
+def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, cut_roi, algorithm, bl, logdir):
     """
     The code taken from yamtbx/dataproc/myspotfinder/command_line/spot_finder_backend.py (New BSD License)
     """
     context = zmq.Context()
-    shikalog.config(bl, "cheetah")
+    shikalog.config(bl, "cheetah", logdir)
 
     # Set up a channel to receive work from the ventilator
     work_receivers = []
@@ -290,6 +319,12 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
         # the message from EIGER
         if socks.get(eiger_receiver) == zmq.POLLIN:
             frames = eiger_receiver.recv_multipart(copy = False)
+
+            if len(frames) == 3:
+                bss_info = json.loads(frames[2].bytes)
+                results_sender.send_pyobj(bss_info)
+                continue
+
             startt = time.time()
             header, data = read_eiger_stream_data(frames)
             if None in (header, data): continue
@@ -306,11 +341,11 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
             imgfile = os.path.join(header["data_directory"],
                                    "%s_%.6d.img"%(str(header["file_prefix"]), header["frame"]+1))
 
-            jpgdir = os.path.join(work_dir, "thumb_%s_%.3d" % (str(header["file_prefix"]), (header["frame"]+1)//1000))
-            try: os.mkdir(jpgdir)
-            except: pass
+            #jpgdir = os.path.join(work_dir, "thumb_%s_%.3d" % (str(header["file_prefix"]), (header["frame"]+1)//1000))
+            #try: os.mkdir(jpgdir)
+            #except: pass
             result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
-                                    params.cheetah.binning, jpgdir=jpgdir)
+                                    params.cheetah.binning)
             result["starttime"] = startt
             result["endtime"] = time.time()
             result["params"] = params
@@ -343,8 +378,8 @@ def run(opts):
     pp = []
     for i in xrange(opts.nproc):
         p = subprocess.Popen(["%s"%sys.executable, "-"], shell=True, stdin=subprocess.PIPE)
-        p.stdin.write("from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm, opts.bl),))
-        print "from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm, opts.bl),)
+        p.stdin.write("from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm, opts.bl, opts.logdir),))
+        print "from cheetah_client import worker\nworker(*%s)\n"%((i, opts.ventilator_hosts, opts.eiger_host, opts.result_host, opts.pub_host, opts.mode, opts.cut_roi, opts.algorithm, opts.bl, opts.logdir),)
         p.stdin.close()
         pp.append(p)
     
@@ -365,6 +400,7 @@ if __name__ == "__main__":
     parser.add_option("--cut-roi", action="store_true", dest="cut_roi")
     parser.add_option("--algorithm", action="store", dest="algorithm", type=int, default=8)
     parser.add_option("--bl", action="store", dest="bl", default="32xu")
+    parser.add_option("--logdir", action="store", dest="logdir", default="/ramdisk")
 
 
     opts, args = parser.parse_args(sys.argv)
