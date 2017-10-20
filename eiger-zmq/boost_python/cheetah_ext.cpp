@@ -48,6 +48,19 @@ public:
 		hitfinderDmax = Dmax;
 	}
 
+	boost::python::dict get_params() const {
+		boost::python::dict ret;
+		ret["ADCthresh"] = hitfinderADCthresh;
+		ret["MinSNR"] = hitfinderMinSNR;
+		ret["MinPixCount"] = hitfinderMinPixCount;
+		ret["MaxPixCount"] = hitfinderMaxPixCount;
+		ret["LocalBGRadius"] = hitfinderLocalBGRadius;
+		ret["MinPeakSeparation"] = hitfinderMinPeakSeparation;
+		ret["Dmin"] = hitfinderDmin;
+		ret["Dmax"] = hitfinderDmax;
+		return ret;
+	}
+
 	template<class T>
 	boost::python::list run(int asic_nx, int asic_ny, 
 							pyublas::numpy_vector<T> data,
@@ -171,6 +184,7 @@ BOOST_PYTHON_MODULE(cheetah_ext)
 			 (bp::arg("ADCthresh")=5, bp::arg("MinSNR")=8, bp::arg("MinPixCount")=2,
 			  bp::arg("MaxPixCount")=40, bp::arg("LocalBGRadius")=2, bp::arg("MinPeakSeparation")=0,
 			  bp::arg("Dmin")=5, bp::arg("Dmax")=30))
+		.def("get_params", &CheetahSinglePanel::get_params)
 		.def("run_float", &CheetahSinglePanel::run<float>,
 			 (bp::arg("asic_nx"), bp::arg("asic_ny"), bp::arg("data"),
 			  bp::arg("beam_x"), bp::arg("beam_y"), bp::arg("wavelength"),
@@ -186,7 +200,5 @@ BOOST_PYTHON_MODULE(cheetah_ext)
 			  bp::arg("beam_x"), bp::arg("beam_y"), bp::arg("wavelength"),
 			  bp::arg("distance"), bp::arg("pixel_size"),
 			  bp::arg("algorithm")))
-
-
 		;
 }

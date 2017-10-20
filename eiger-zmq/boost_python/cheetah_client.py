@@ -61,7 +61,22 @@ def read_eiger_stream_data(frames, bss_job_mode=4):
     else:
         RuntimeError("Unknown encoding (%s)"%header["encoding"])
 
-    data[data==2**(byte*8)-1] = 0
+    # Count bad pixels
+    if 1:
+        h, w = data.shape
+        nx = (w-1030)//1040 + 1
+        ny = (h-514)//551 + 1
+        num_gap = (nx-1)*(1040-1030)*514*ny + (ny-1)*(551-514)*w
+        bad_sel = (data==2**(byte*8)-1)
+        data[bad_sel] = 0
+        num_bad = numpy.sum(bad_sel) - num_gap
+        imgfile = os.path.join(header["data_directory"],
+                               "%s_%.6d.img"%(str(header["file_prefix"]), header["frame"]+1))
+        repf = shikalog.warning if num_bad >= 1030*514/4 else shikalog.info # Warn if half module is lost
+        repf("%s: n_bad_pixels= %d" % (imgfile, num_bad))
+    else:
+        data[data==2**(byte*8)-1] = 0
+        
     return header, data
 # read_eiger_stream_data()
 
@@ -116,8 +131,8 @@ def zoomed_image(data, vendortype, width, height, beamx, beamy,
     def get_zoom_box(img_w, img_h, x, y, boxsize=400, mag=16): # from viewer.image.get_zoom_box()
         n_pixels = int(math.ceil(boxsize / mag)+.5)
         #shikalog.info("x,y,mag,n_pixels= %s" % ((x,y,mag,n_pixels),))
-        x0 = min(img_w - n_pixels, int(math.floor(x - (n_pixels / 2))+.5))
-        y0 = min(img_h - n_pixels, int(math.floor(y - (n_pixels / 2))+.5))
+        x0 = int(math.floor(x - (n_pixels / 2))+.5)
+        y0 = int(math.floor(y - (n_pixels / 2))+.5)
         return (x0, y0, n_pixels, n_pixels)
     # get_zoom_box()
 
@@ -127,14 +142,12 @@ def zoomed_image(data, vendortype, width, height, beamx, beamy,
         try:
             clipsize = distance * math.tan(2.*math.asin(wavelength/2./d_min)) / pixel_size*2
             if clipsize > 0:
-                mag = tw / float(min(clipsize, width))
-                #mag = tw / float(clipsize) # SHOULD BE THIS!!!
+                mag = tw / float(clipsize) # Better to change d_min if clipsize>width ?
         except ValueError:
             pass # Use default
 
     x0, y0, w, h = get_zoom_box(width, height, beamx, beamy, boxsize=tw, mag=mag)
     assert (w == h)
-    x0, y0 = max(x0, 0), max(y0, 0) ### SHOULD BE OMITTED!!
 
     if data.dtype == numpy.uint32: MyImage = imageconv_ext.MyImage_uint32
     elif data.dtype == numpy.uint16: MyImage = imageconv_ext.MyImage_uint16
@@ -145,7 +158,7 @@ def zoomed_image(data, vendortype, width, height, beamx, beamy,
         img = MyImage(rawdata=data, width=width, height=height,
                       vendortype=vendortype,
                       brightness=brightness/100.,
-                      saturation=65535)
+                      saturation=65535) # XXX give correct saturation value.
 
         #shikalog.info("x0,y0,w,h,tw= %s" % ((x0,y0,w,h,tw),))
         img.prep_string_cropped_and_scaled(x0,y0,w,h,tw,tw)
@@ -177,9 +190,11 @@ def zoomed_image(data, vendortype, width, height, beamx, beamy,
 def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1):
     beamx, beamy = header["beam_center_x"], header["beam_center_y"]
     pixel_size = header["pixel_size_x"]
+    d_min = cheetah.get_params()["Dmin"]
+    
     # Cut ROI
     if cut_roi:
-        r_max = header["distance"] * math.tan(2.*math.asin(header["wavelength"]/2./params.distl.res.outer)) / header["pixel_size_x"]
+        r_max = header["distance"] * math.tan(2.*math.asin(header["wavelength"]/2./d_min)) / header["pixel_size_x"]
         roidata = data[max(0,beamy-r_max):min(beamy+r_max,data.shape[0]-1), max(0,beamx-r_max):min(beamx+r_max,data.shape[1]-1)]
         if roidata.shape[0] < r_max and beamy-r_max < 0: beamy = roidata.shape[0] - r_max
         else: beamy = r_max
@@ -210,7 +225,7 @@ def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
                                         beamx=header["beam_center_x"], beamy=header["beam_center_y"],
                                         distance=header["distance"], wavelength=header["wavelength"],
                                         pixel_size=header["pixel_size_x"],
-                                        thumb_width=600, d_min=5,
+                                        thumb_width=600, d_min=d_min,
                                         #jpgout=jpgout, #os.path.join(jpgdir, os.path.basename(imgfile)+".jpg"),
                                         brightness=150, color_scheme=0, out_type="str")
 

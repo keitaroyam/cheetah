@@ -2,7 +2,7 @@
 // The original of original is iotbx/detectors/display.h. (New BSD License)
 
 /*
-g++ -O3 -c imageconv_ext.cpp -shared -fPIC  -I../ -I/oys/python/python-2.7.6/include/python2.7/ -I/oys/python/python-2.7.6/lib/python2.7/site-packages/PyUblas-2013.1-py2.7-linux-x86_64.egg/pyublas/include -I/oys/python/python-2.7.6/lib/python2.7/site-packages/numpy/core/include
+g++ -O3 -c imageconv_ext.cpp -shared -fPIC  -I../ -I/oys/python/python-2.7.6/include/python2.7/ -I/oys/python/python-2.7.6/lib/python2.7/site-packages/PyUblas-2013.1-py2.7-linux-x86_64.egg/pyublas/include -I/oys/python/python-2.7.6/lib/python2.7/site-packages/numpy/core/include # -I/oys/libjpeg/libjpeg-turbo-1.4.2/build/include
 g++ -shared imageconv_ext.o -o imageconv_ext.so -L/oys/xtal/cctbx/build/lib -lboost_python -ljpeg
  */
 #include <stdio.h>
@@ -40,6 +40,11 @@ public:
 				const int x = x_ + x0, y = y_ + y0;
 				const int i = y * size2() + x;
 				const int i_ = y_*w + x_;
+
+				if (x<0 || y<0 || x>=size2() || y>=size1()) {
+				  ++dead_area;
+				  continue;
+				}
 
 				roi[i_] = rawdata[i];
 
@@ -107,11 +112,7 @@ public:
   void prep_string_cropped(int x0, int y0, int w, int h) {
     const int s_size = w * h * 3;
     export_s.resize(s_size);
-    assert (x0 >= 0);
-    assert (y0 >= 0);
-    assert (x0+w <= size2());
-    assert (y0+h <= size1());
-
+	
     const double correction = local_bright_contrast(x0, y0, w, h);
 
     if (vendortype=="Pilatus-6M" || vendortype=="Pilatus-2M" || vendortype=="Pilatus-300K") {
@@ -144,10 +145,6 @@ public:
 
     const int s_size = im_w * im_h * 3;
     export_s.resize(s_size);
-    assert (x0 >= 0);
-    assert (y0 >= 0);
-    assert (x0+w <= size2());
-    assert (y0+h <= size1());
     assert (im_w >= 0);
     assert (im_h >= 0);
 
@@ -184,6 +181,45 @@ public:
 
   std::string export_s; //export data in string form; make public for readonly
 
+/*
+  std::string export_jpeg_data(const std::string &filename, int width, int height, int quality) const {
+    assert (export_s.size() == width*height*3);
+
+    struct jpeg_compress_struct cinfo;
+    struct jpeg_error_mgr jerr;
+
+	unsigned char *mem = NULL;
+	unsigned long mem_size = 0;
+	
+    cinfo.err = jpeg_std_error(&jerr);
+    jpeg_create_compress(&cinfo);
+	jpeg_mem_dest(&cinfo, &mem, &mem_size);
+
+    // Setting the parameters of the output file here 
+    cinfo.image_width = width;
+    cinfo.image_height = height;
+    cinfo.input_components = 3;
+    cinfo.in_color_space = JCS_RGB;
+
+    jpeg_set_defaults(&cinfo);
+    jpeg_set_quality(&cinfo, quality, TRUE);
+
+    // Now do the compression .. 
+    jpeg_start_compress( &cinfo, TRUE );
+
+    for(int i = 0; i < height; ++i) {
+      JSAMPROW row_ptr =  (JSAMPROW)(export_s.c_str() + i*width*3);
+      jpeg_write_scanlines( &cinfo, &row_ptr, 1 );
+    }
+
+    jpeg_finish_compress( &cinfo );
+    jpeg_destroy_compress( &cinfo );
+	std::cout << "memsize=" << mem_size << "\n";
+	std::string ret(mem, mem_size);
+	free(mem);
+	return ret;
+  }*/
+
   void save_as_jpeg(const std::string &filename, int width, int height, int quality) const {
     assert (export_s.size() == width*height*3);
 
@@ -193,7 +229,12 @@ public:
     /* this is a pointer to one row of image data */
     FILE *outfile = fopen(filename.c_str(), "wb");
 
+	if (outfile == NULL)
+		throw std::runtime_error("cannot create file");
+
     cinfo.err = jpeg_std_error(&jerr);
+	jerr.error_exit = my_jpeg_error_exit;
+
     jpeg_create_compress(&cinfo);
     jpeg_stdio_dest(&cinfo, outfile);
 
@@ -257,7 +298,12 @@ private:
 
     const int y = i/nfast, x = i%nfast;
 
-    if ( (y%212<195) && (x%494<487) )
+    if (x<0 || y<0 || x>=size2() || y>=size1()) {
+      export_s[i*3+0] = (char)0xb3;
+      export_s[i*3+1] = (char)0x9c;
+      export_s[i*3+2] = (char)0x9b;
+    }
+    else if ( (y%212<195) && (x%494<487) )
       prep_str_inner(export_s, i, i, correction, saturation);
     else {
       export_s[i*3+0] = (char)255;
@@ -276,7 +322,12 @@ private:
     const int i = y * width + x;
     const int i_ = y_*w + x_;
 
-    if ( (y%212<195) && (x%494<487) )
+    if (x<0 || y<0 || x>=size2() || y>=size1()) {
+      export_s[i_*3+0] = (char)0xb3;
+      export_s[i_*3+1] = (char)0x9c;
+      export_s[i_*3+2] = (char)0x9b;
+    }
+    else if ( (y%212<195) && (x%494<487) )
       prep_str_inner(export_s, i, i_, correction, saturation);
     else {
       export_s[i_*3+0] = (char)255;
@@ -296,7 +347,12 @@ private:
     const int i = y * width + x;
     const int i_ = y_*im_w + x_;
 
-    if ( (y%212<195) && (x%494<487) )
+    if (x<0 || y<0 || x>=size2() || y>=size1()) {
+      export_s[i_*3+0] = (char)0xb3;
+      export_s[i_*3+1] = (char)0x9c;
+      export_s[i_*3+2] = (char)0x9b;
+    }
+    else if ( (y%212<195) && (x%494<487) )
       prep_str_inner(export_s, i, i_, correction, saturation);
     else {
       export_s[i_*3+0] = (char)255;
@@ -312,7 +368,12 @@ private:
 
     const int y = i/nfast, x = i%nfast;
 
-    if ( (y%551<514) && (x%1040<1030) )
+    if (x<0 || y<0 || x>=size2() || y>=size1()) {
+      export_s[i*3+0] = (char)0xb3;
+      export_s[i*3+1] = (char)0x9c;
+      export_s[i*3+2] = (char)0x9b;
+    }
+    else if ( (y%551<514) && (x%1040<1030) )
       prep_str_inner(export_s, i, i, correction, saturation);
     else {
       export_s[i*3+0] = (char)255;
@@ -331,7 +392,12 @@ private:
     const int i = y * width + x;
     const int i_ = y_*w + x_;
 
-    if ( (y%551<514) && (x%1040<1030) )
+    if (x<0 || y<0 || x>=size2() || y>=size1()) {
+      export_s[i_*3+0] = (char)0xb3;
+      export_s[i_*3+1] = (char)0x9c;
+      export_s[i_*3+2] = (char)0x9b;
+    }
+    else if ( (y%551<514) && (x%1040<1030) )
       prep_str_inner(export_s, i, i_, correction, saturation);
     else {
       export_s[i_*3+0] = (char)255;
@@ -351,7 +417,12 @@ private:
     const int i = y * width + x;
     const int i_ = y_*im_w + x_;
 
-    if ( (y%551<514) && (x%1040<1030) )
+    if (x<0 || y<0 || x>=size2() || y>=size1()) {
+      export_s[i_*3+0] = (char)0xb3;
+      export_s[i_*3+1] = (char)0x9c;
+      export_s[i_*3+2] = (char)0x9b;
+    }
+    else if ( (y%551<514) && (x%1040<1030) )
       prep_str_inner(export_s, i, i_, correction, saturation);
     else {
       export_s[i_*3+0] = (char)255;
@@ -359,6 +430,13 @@ private:
       export_s[i_*3+2] = (char)228;
     }
   }
+
+	static void my_jpeg_error_exit(j_common_ptr cinfo)
+		{
+			char buffer[JMSG_LENGTH_MAX];
+			(*cinfo->err->format_message)(cinfo, buffer);
+			throw std::runtime_error(buffer);
+		}
 };
 
 template<class T>
@@ -385,6 +463,7 @@ struct my_image_wrapper {
 			.def("prep_string_cropped",&w_t::prep_string_cropped, (bp::arg_("x0"),bp::arg_("y0"),bp::arg_("w"),bp::arg_("h")))
 			.def("prep_string_cropped_and_scaled",&w_t::prep_string_cropped_and_scaled, (bp::arg_("x0"),bp::arg_("y0"),bp::arg_("w"),bp::arg_("h"),bp::arg_("im_w"),bp::arg_("im_h")))
 			.def("save_as_jpeg", &w_t::save_as_jpeg, (bp::arg_("width"),bp::arg_("height"),bp::arg_("quality")))
+//			.def("export_jpeg_data", &w_t::export_jpeg_data, (bp::arg_("width"),bp::arg_("height"),bp::arg_("quality")))
 
 			.def_readonly("export_string",&w_t::export_s)
 			;
