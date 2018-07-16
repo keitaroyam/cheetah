@@ -1,4 +1,5 @@
 # Cheetah dispatcher by Takanori Nakane
+# modified for Rayonix detector with SACLA API by Keitaro Yamashita
 
 # This script must be edited for your environment,
 # especially (1) values quoted by @@ and (2) job submission commands.
@@ -139,6 +140,75 @@ ruby @@SCRIPT_PATH@@/parse_stream.rb < {runname}.stream > {runname}.csv
 
 rm job.id job.host
 '''
+
+# JOB SCRIPTS FOR RAYONIX
+job_script_hs = '''#!/bin/bash
+#PBS -l nodes=1:ppn=14
+#PBS -e {runname}/cheetah.stderr
+#PBS -o {runname}/cheetah.stdout
+#PBS -N {runname}
+#PBS -q {queuename}
+
+cd $PBS_O_WORKDIR/{runname}
+
+# This is the master job for runid, runid-light, runid-0.
+# Subjobs must be submitted separatedly.
+
+#if [ -e job.id ]; then
+#   exit
+#fi
+
+echo "PBS_JOBID=$PBS_JOBID\nhostname=`hostname`"
+echo $PBS_JOBID > job.id
+hostname > job.host
+source @@SETUP_SCRIPT@@
+ShowRunInfo -b {beamline} -r {runid} > run.info
+
+dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --bl {beamline} --nproc $NCPUS {arguments}
+
+
+# th 100 gr 5000000 for > 10 keV
+@@INDEXAMAJIG_PATH@@/indexamajig -g {runid}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
+run{runname}.h5
+EOF
+rm -fr indexamajig.*
+grep Cell {runname}.stream | wc -l > indexed.cnt
+ruby @@SCRIPT_PATH@@/parse_stream.rb < {runname}.stream > {runname}.csv
+
+rm job.id job.host
+'''
+
+job_script_dark_hs = '''#!/bin/bash
+#PBS -l nodes=1:ppn=14
+#PBS -e {runname}/cheetah.stderr
+#PBS -o {runname}/cheetah.stdout
+#PBS -N {runname}
+#PBS -q {queuename}
+
+cd $PBS_O_WORKDIR/{runname}/
+
+#if [ -e job.id ]; then
+#   exit
+#fi
+
+echo "PBS_JOBID=$PBS_JOBID\nhostname=`hostname`"
+echo $PBS_JOBID > job.id
+hostname > job.host
+source @@SETUP_SCRIPT@@
+
+dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --bl {beamline} --nproc $NCPUS {arguments}
+
+# th 100 gr 5000000 for > 10 keV
+@@INDEXAMAJIG_PATH@@/indexamajig -g {runid}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
+run{runname}.h5
+EOF
+rm -fr indexamajig.*
+grep Cell {runname}.stream | wc -l > indexed.cnt
+ruby @@SCRIPT_PATH@@/parse_stream.rb < {runname}.stream > {runname}.csv
+
+rm job.id job.host
+'''
+
 
 class LogWatcher(threading.Thread):
     def __init__(self, filename, window, runid):
@@ -635,6 +705,11 @@ class MainWindow(wx.Frame):
         master_arguments = ""
         subjobs = []
         
+        if opts.detector == "rayonix":
+            if opts.clen and opts.clen==opts.clen: arguments += " --clen=%f " % opts.clen
+            if opts.beam_x and opts.beam_x==opts.beam_x: arguments += " --beam-x=%f " % opts.beam_x
+            if opts.beam_y and opts.beam_y==opts.beam_y: arguments += " --beam-y=%f " % opts.beam_y
+
         if (pd1_thresh != 0 or pd2_thresh != 0 or pd3_thresh != 0):
             run_dir += "-light"
             if (pd1_thresh != 0 and self.opts.pd1_name is not None):
@@ -664,9 +739,10 @@ class MainWindow(wx.Frame):
             return
         os.mkdir(run_dir)
         f = open("%s/run.sh" % run_dir, "w")
-        f.write(job_script.format(runid=runid, runname=run_dir, clen=self.opts.clen, queuename=self.opts.queue,
-                                  subjobs=" ".join(subjobs), arguments=master_arguments,
-                                  crystfel_args=crystfel_args, beamline=bl))
+        job_scr = job_script_hs if opts.detector == "rayonix" else job_script
+        f.write(job_scr.format(runid=runid, runname=run_dir, clen=self.opts.clen, queuename=self.opts.queue,
+                               subjobs=" ".join(subjobs), arguments=master_arguments,
+                               crystfel_args=crystfel_args, beamline=bl))
         f.close()
         os.system("qsub {rundir}/run.sh > {rundir}/job.id".format(rundir=run_dir))
         self.addRun(run_dir)
@@ -674,16 +750,17 @@ class MainWindow(wx.Frame):
         # Children
         for subjob in subjobs:
             run_dir = runid + "-" + subjob
-            child_arguments = arguments + "--type=" + subjob
+            child_arguments = arguments + " --type=" + subjob
             
             if os.path.exists(run_dir):
                 self.showError("You told me to process run %s, but a directory for the run already exists. Please remove it before re-processing." % run_dir)
                 return
             os.mkdir(run_dir)
             f = open("%s/run.sh" % run_dir, "w")
-            f.write(job_script_dark.format(runid=runid, runname=run_dir, 
-                                           queuename=self.opts.queue, arguments=child_arguments,
-                                           crystfel_args=crystfel_args, beamline=bl))
+            job_scr = job_script_dark_hs if opts.detector == "rayonix" else job_script_dark
+            f.write(job_scr.format(runid=runid, runname=run_dir, 
+                                   queuename=self.opts.queue, arguments=child_arguments,
+                                   crystfel_args=crystfel_args, beamline=bl))
             f.close()
             if self.opts.quick != 1:
                 os.system("qsub {runid}/run.sh > {runid}/job.id".format(runid=run_dir))
@@ -834,16 +911,12 @@ print " \"Data processing pipeline for serial femtosecond crystallography at SAC
 print " Nakane et al., J. Appl. Cryst. (2016). 49"
 print
 
-if not os.path.exists("sacla-photon.ini"):
-    sys.stderr.write("ERROR: Configuration file was not found!\n\n")
-    sys.stderr.write("You should copy @@TEMPLATE_FILE@@ into this directory\n")
-    sys.stderr.write("and confirm the settings.\n")
-    sys.exit(-1)
-
 parser = optparse.OptionParser()
 parser.add_option("--monitor", dest="monitor", type=int, default=False, help="Monitor only")
 parser.add_option("--bl", dest="bl", type=int, default=2, help="Beamline")
 parser.add_option("--clen", dest="clen", type=float, default=50.0, help="camera length in mm")
+parser.add_option("--beam-x", dest="beam_x", type=float, help="beam center x in px")
+parser.add_option("--beam-y", dest="beam_y", type=float, help="beam center y in px")
 parser.add_option("--quick", dest="quick", type=int, default=False, help="enable quick mode")
 parser.add_option("--queue", dest="queue", type=str, default="serial", help="queue name")
 parser.add_option("--max_jobs", dest="max_jobs", type=int, default=14, help="maximum number of jobs to submit when --quick is enabled")
@@ -859,8 +932,19 @@ parser.add_option("--submit", dest="submit", type=int, default=-1, help="submit 
 parser.add_option("--pd1_thresh", dest="pd1_thresh", type=float, default=0, help="PD1 threshold")
 parser.add_option("--pd2_thresh", dest="pd2_thresh", type=float, default=0, help="PD2 threshold")
 parser.add_option("--pd3_thresh", dest="pd3_thresh", type=float, default=0, help="PD3 threshold")
+parser.add_option("--detector", dest="detector", type=str, default="mpccd", help="mpccd or rayonix")
 
 opts, args = parser.parse_args()
+
+if opts.detector not in ("mpccd", "rayonix"):
+    sys.stderr.write("ERROR: Invalid --detector parameter (%s was given)\n" % opts.detector)
+    sys.exit(-1)
+
+if opts.detector=="mpccd" and not os.path.exists("sacla-photon.ini"):
+    sys.stderr.write("ERROR: Configuration file was not found!\n\n")
+    sys.stderr.write("You should copy @@TEMPLATE_FILE@@ into this directory\n")
+    sys.stderr.write("and confirm the settings.\n")
+    sys.exit(-1)
 
 if opts.submit_dark2 is not False:
     sys.stderr.write("WARNING: submit_dark2 has been deprecated. Use --submit-dark-to=2 instead.\n")
@@ -890,6 +974,7 @@ if opts.bl != 2 and opts.bl != 3:
     sys.stderr.write("ERROR: beamline must be 2 or 3.\n")
     sys.exit(-1)
 
+print "Option: detector         = %s" % opts.detector
 print "Option: monitor          = %s" % opts.monitor
 print "Option: bl               = %d" % opts.bl
 print "Option: clen             = %f mm" % opts.clen
