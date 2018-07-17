@@ -250,6 +250,18 @@ def run(opts):
     print("# runNumber (-r/--run):         %d" % opts.runid)
     print("# output H5 file (-o/--output): %s (default = run######.h5)" % opts.outputH5)
     print("# beamline (--bl):              %d (default = 3)" % opts.bl)
+    print("# img root (--rayonix-root):    %s" % opts.rayonix_root)
+    print("# distance (--clen):            %s" % opts.clen)
+    print("# beam center (--beam-x/y):     %s,%s" % (opts.beam_x,opts.beam_y))
+    print("# Cheetah settings")
+    print("#  --dmin, --dmax:              %s,%s" % (opts.d_min, opts.d_max))
+    print("#  --adc-threshold:             %s" % opts.ADCthresh)
+    print("#  --min-snr:                   %s" % opts.MinSNR)
+    print("#  --min/max-pixcount:          %s,%s" % (opts.MinPixCount, opts.MaxPixCount))
+    print("#  --local-bgradius:            %s" % opts.LocalBGRadius)
+    print("#  --min-peaksep:               %s" % opts.MinPeakSeparation)
+    print("#  --min-spots:                 %s" % opts.min_spots)
+    print("#  --algorithm:                 %s" % opts.algorithm)
     print("# PD1 threshold (--pd1_thresh): %.3f (default = 0; ignore.)" % opts.pd1_threshold)
     print("# PD2 threshold (--pd2_thresh): %.3f (default = 0; ignore.)" % opts.pd2_threshold)
     print("# PD3 threshold (--pd3_thresh): %.3f (default = 0; ignore.)" % opts.pd3_threshold)
@@ -302,8 +314,8 @@ def run(opts):
 
     # XXX
     valid_tags = tag_list[shutter==1] # [tag for tag, is_open in zip(tag_list, shutter) if is_open == 1]
-    print "DEBUG:: shutter=", shutter
-    print "DEBUG:: valid_tags=", valid_tags
+    print "# DEBUG:: shutter=", shutter
+    print "# DEBUG:: valid_tags=", valid_tags
     if 0:
         tag_offset = 3
         tag_list = tag_list[tag_offset:]
@@ -322,7 +334,7 @@ def run(opts):
         img_numbers = map(lambda x: int(x[x.rindex("_")+1:-4]), img_files)
         dropped_frames = list(set(range(1, len(valid_tags))).difference(img_numbers))
         print "# Unsaved frame numbers =", tuple(dropped_frames)
-        print "DEBUG::", len(img_files)-len(dropped_frames)+1, len(valid_tags)
+        print "# DEBUG::", len(img_files)-len(dropped_frames)+1, len(valid_tags)
         if len(img_files)+len(dropped_frames)+1 == len(valid_tags):
             print "#  %d unsaved img files found, which explains number mismatch" % len(dropped_frames)
             valid_tags = numpy.delete(valid_tags, numpy.array(dropped_frames)-1)
@@ -349,8 +361,9 @@ def run(opts):
         pd3_values = numpy.array(map(str2float, dbpy.read_syncdatalist(opts.pd3_sensor_name, high_tag, tuple(valid_tags))))
 
     # Identify bad tags
+    # XXX not tested!! this feature must not be used. tags with bad PDs must be detected after experiment.
     frame_after_light = 9999
-    bad_tags = []
+    bad_tag_idxes = []
     for i in xrange(len(valid_tags)):
         light = True
         if (opts.pd1_threshold != 0 and
@@ -371,7 +384,12 @@ def run(opts):
         if ((opts.light_dark >= 0 and frame_after_light != opts.light_dark) or
             (opts.light_dark == PD_DARK_ANY and frame_after_light == 0)):
             print "# PD check: %d is bad tag!" % valid_tags[i]
-            bad_tags.append(valid_tags[i])
+            bad_tag_idxes.append(i)
+
+    if bad_tag_idxes:
+        valid_tags = numpy.delete(valid_tags, numpy.array(bad_tag_idxes))
+        for i in reversed(bad_tag_idxes): del img_files[i]
+
 
     # Debug code; this takes too much time!
     try:
@@ -385,8 +403,9 @@ def run(opts):
             ofs.close()
     except:
         pass
-    
+
     # block spliting
+    # TODO db query may be slow, which may need to be done only once?
     if opts.parallel_block >= 0:
         width = len(valid_tags)//parallel_size
         i_start = opts.parallel_block*width
@@ -407,7 +426,8 @@ def run(opts):
             continue
         file_tag_ene.append((frame, tag, ene))
     
-    # 
+    # Save h5
+    # TODO implement on-the-fly h5 file writing in hit-finding to avoid reading img file twice.
     make_h5(out=opts.outputH5,
             file_tag_ene=file_tag_ene,
             comment=comment)
@@ -422,20 +442,21 @@ Number of hits: %(nhits)d
 """ % dict(ctime=time.ctime(), eltime=time.time()-eltime_from, ntotal=len(img_files), nhits=len(file_tag_ene)))
 
 
+    ofs = open("cheetah.dat", "w")
+    ofs.write("file tag nspots total_snr\n")
+    for frame, tag in zip(sorted(results), valid_tags):
+        ret = results[frame]
+        n_spots = len(ret["spots"])
+        total_snr = sum(map(lambda x: x[2], ret["spots"]))
+        ofs.write("%s %d %6d %.3e\n"%(frame, tag, n_spots, total_snr))
+    ofs.close()
+
     if opts.gen_adx:
         for frame in sorted(results):
             ret = results[frame]
             adx_out = open(os.path.basename(frame)+".adx", "w")
             for x,y,snr,d in ret["spots"]: adx_out.write("%6d %6d %.2e\n" % (x,y,snr))
             adx_out.close()
-
-    ofs = open("cheetah.dat", "w")
-    ofs.write("file nspots total_snr\n")
-    for frame in sorted(results):
-        ret = results[frame]
-        n_spots = len(ret["spots"])
-        total_snr = sum(map(lambda x: x[2], ret["spots"]))
-        ofs.write("%s %6d %.3e\n"%(frame, n_spots, total_snr))
 # run()
     
 if __name__ == "__main__":

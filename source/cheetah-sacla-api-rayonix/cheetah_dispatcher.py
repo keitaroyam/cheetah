@@ -158,7 +158,7 @@ cd $PBS_O_WORKDIR/{runname}
 #   exit
 #fi
 
-echo "PBS_JOBID=$PBS_JOBID\nhostname=`hostname`"
+echo "#PBS_JOBID=$PBS_JOBID\n#hostname=`hostname`"
 echo $PBS_JOBID > job.id
 hostname > job.host
 source @@SETUP_SCRIPT@@
@@ -191,7 +191,7 @@ cd $PBS_O_WORKDIR/{runname}/
 #   exit
 #fi
 
-echo "PBS_JOBID=$PBS_JOBID\nhostname=`hostname`"
+echo "#PBS_JOBID=$PBS_JOBID\n#hostname=`hostname`"
 echo $PBS_JOBID > job.id
 hostname > job.host
 source @@SETUP_SCRIPT@@
@@ -944,6 +944,10 @@ if opts.detector=="mpccd" and not os.path.exists("sacla-photon.ini"):
     sys.stderr.write("ERROR: Configuration file was not found!\n\n")
     sys.stderr.write("You should copy @@TEMPLATE_FILE@@ into this directory\n")
     sys.stderr.write("and confirm the settings.\n")
+    sys.exit(-1)
+
+if opts.detector=="rayonix" and (opts.pd1_thresh>0 or opts.pd2_thresh>0 or opts.pd3_thresh>0):
+    sys.stderr.write("ERROR: PD threshold setting is not supported for Rayonix detectors!\n")
     sys.exit(-1)
 
 if opts.submit_dark2 is not False:
