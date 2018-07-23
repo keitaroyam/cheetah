@@ -164,7 +164,7 @@ hostname > job.host
 source @@SETUP_SCRIPT@@
 ShowRunInfo -b {beamline} -r {runid} > run.info
 
-dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --bl {beamline} --nproc $NCPUS {arguments}
+dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runid}.geom --bl {beamline} --nproc $NCPUS {arguments} @../sacla-rayonix.cfg
 
 
 # th 100 gr 5000000 for > 10 keV
@@ -195,11 +195,12 @@ echo "#PBS_JOBID=$PBS_JOBID\n#hostname=`hostname`"
 echo $PBS_JOBID > job.id
 hostname > job.host
 source @@SETUP_SCRIPT@@
+ShowRunInfo -b {beamline} -r {runid} > run.info
 
-dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --bl {beamline} --nproc $NCPUS {arguments}
+dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} @../sacla-rayonix.cfg
 
 # th 100 gr 5000000 for > 10 keV
-@@INDEXAMAJIG_PATH@@/indexamajig -g {runid}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
+@@INDEXAMAJIG_PATH@@/indexamajig -g {runname}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
 run{runname}.h5
 EOF
 rm -fr indexamajig.*
@@ -945,8 +946,13 @@ if opts.detector=="mpccd" and not os.path.exists("sacla-photon.ini"):
     sys.stderr.write("You should copy @@TEMPLATE_FILE@@ into this directory\n")
     sys.stderr.write("and confirm the settings.\n")
     sys.exit(-1)
+    
+if opts.detector=="rayonix" and not os.path.exists("sacla-rayonix.cfg"):
+    sys.stderr.write("WARNING: Configuration file was not found!\n")
+    sys.stderr.write("Generating empty config file sacla-rayonix.cfg\n\n")
+    open("sacla-rayonix.cfg", "a").close()
 
-if opts.detector=="rayonix" and (opts.pd1_thresh>0 or opts.pd2_thresh>0 or opts.pd3_thresh>0):
+if opts.detector=="rayonix" and (opts.pd1_name or opts.pd2_name or opts.pd3_name):
     sys.stderr.write("ERROR: PD threshold setting is not supported for Rayonix detectors!\n")
     sys.exit(-1)
 

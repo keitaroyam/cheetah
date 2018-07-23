@@ -78,7 +78,8 @@ public:
 
 		// Setup resolution mask
 		const double r_min = distance * std::tan(2.*std::asin(wavelength/2./hitfinderDmax)) / pixel_size;
-		const double r_max = distance * std::tan(2.*std::asin(wavelength/2./hitfinderDmin)) / pixel_size;
+		const double r_max_edge = std::sqrt(beam_x*beam_x+beam_y*beam_y); // assuming beam center is not so far from image center
+		const double r_max = hitfinderDmin<1e-6 ? r_max_edge : distance * std::tan(2.*std::asin(wavelength/2./hitfinderDmin)) / pixel_size;
 
 		float *pix_r = (float *) calloc(pix_nn, sizeof(float));
         char *mask = (char*) calloc(pix_nn, sizeof(char));

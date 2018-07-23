@@ -11,13 +11,6 @@ import datetime
 timeconv = lambda t: datetime.datetime.strptime(t, "%m%d%H%M%Y.%S")
 
 
-class MarCCDHeader:
-    def __init__(self):
-        pass
-    # __init__()
-# class MarCCDHeader
-
-
 class MarCCD:
     def __init__(self, img_in):
         self.img_in = img_in

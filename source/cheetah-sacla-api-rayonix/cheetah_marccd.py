@@ -51,6 +51,7 @@ rigid_group_q0 = q0
 rigid_group_collection_connected = q0
 rigid_group_collection_independent = q0
 
+q0/adu_per_eV = 0.8e-4 ; dummy for old hdfsee
 q0/adu_per_photon = 0.8
 q0/max_adu = %(max_adu)d
 q0/min_fs = 0
@@ -235,6 +236,27 @@ def process_images(img_files, mean_photon_energy, opts):
     return results
 # process_images()
 
+def update_status(eltime_from, status=None, ntotal=None, nproc=None, nhits=None):
+    ss = []
+    if ntotal is not None: ss.append("Total=%d"%ntotal)
+    if nproc is not None: ss.append("Processed=%d,LLFpassed=%d"%(nproc,nproc))
+    if nhits is not None: ss.append("Hits=%d"%nhits)
+    if status is not None: ss.append("Status=%s"%status)
+    
+    ofs = open("status.txt", "w")
+    ofs.write("""\
+# Cheetah status
+Update time: %(ctime)s
+Elapsed time: %(eltime)f sec
+Status: %(status_txt)s
+"""% dict(ctime=time.ctime(), eltime=time.time()-eltime_from, status_txt=",".join(ss)))
+
+    if ntotal is not None: ofs.write("Frames processed: %d\n"%ntotal)
+    if nhits is not None: ofs.write("Number of hits: %d\n"%nhits)
+
+    ofs.close()
+# update_status()
+
 def error_status(err_str):
     open("status.txt", "w").write("""\
 # Cheetah status
@@ -242,7 +264,6 @@ Update time: %(ctime)s
 Status: Status=Error-%(err_str)s
 """ % dict(ctime=time.ctime(), err_str=err_str))
 # error_status()
-
 
 def run(opts):
     eltime_from = time.time()
@@ -271,7 +292,8 @@ def run(opts):
     print("# nFrame after light:           %d (default = -1; accept all image. -2; accept all dark images)" % opts.light_dark)
     print("# parallel_block:               %d (default = -1; no parallelization)" % opts.parallel_block)
     print("# nproc:                        %d (default = 1)" % opts.nproc)
-
+    print("")
+    
     assert opts.algorithm in (6, 8)
     assert opts.runid is not None
     assert opts.bl is not None
@@ -299,7 +321,7 @@ def run(opts):
     end_tag = run_info['end_tagnumber']
 
     tag_list = numpy.array(dbpy.read_taglist_byrun(opts.bl, opts.runid))
-    print "# Run %d: HighTag %d, Tags %d (inclusive) to %d (exclusive), thus %d images" % (opts.runid, high_tag, start_tag, end_tag, len(tag_list))
+    print "# Run %d: HighTag %d, Tags %d (inclusive) to %d (exclusive), thus %d tags" % (opts.runid, high_tag, start_tag, end_tag, len(tag_list))
     comment = dbpy.read_comment(opts.bl, opts.runid)
     print "# Comment: %s" % comment
     print
@@ -332,7 +354,7 @@ def run(opts):
         print "# WARNING!! img_files and valid_tag number mismatch"
 
         img_numbers = map(lambda x: int(x[x.rindex("_")+1:-4]), img_files)
-        dropped_frames = list(set(range(1, len(valid_tags))).difference(img_numbers))
+        dropped_frames = sorted(set(range(1, len(valid_tags))).difference(img_numbers))
         print "# Unsaved frame numbers =", tuple(dropped_frames)
         print "# DEBUG::", len(img_files)-len(dropped_frames)+1, len(valid_tags)
         if len(img_files)+len(dropped_frames)+1 == len(valid_tags):
@@ -340,8 +362,9 @@ def run(opts):
             valid_tags = numpy.delete(valid_tags, numpy.array(dropped_frames)-1)
             assert len(img_files)+1 == len(valid_tags)
         else:
-            error_status("NumberMismatchNotResolved")
-            return -1
+            print "# Assuming last %d img files are generated after stopping run.." % (len(img_files)-len(valid_tags)+1)
+            img_files = img_files[:len(valid_tags)-1]
+            assert len(img_files)+1 == len(valid_tags)
     
     # Get photon energies
     photon_energies_in_keV  = numpy.array([str2float(s) for s in dbpy.read_syncdatalist(sensor_spec, high_tag, tuple(valid_tags))])
@@ -416,7 +439,10 @@ def run(opts):
         print "# parallel_block=%d: %d tags will be processed (%d..%d)" % (opts.parallel_block, len(valid_tags), valid_tags[0], valid_tags[-1])
 
 
-    make_geom(img_files[0], "%d.geom"%opts.runid, beam_x=opts.beam_x, beam_y=opts.beam_y, clen=opts.clen)
+    make_geom(img_files[0], opts.output_geom, beam_x=opts.beam_x, beam_y=opts.beam_y, clen=opts.clen)
+
+    update_status(eltime_from, status="HitFinding",
+                  ntotal=len(img_files), nproc=0, nhits=0)
 
     # Hit-finding
     results = process_images(img_files, mean_photon_energy, opts)
@@ -425,6 +451,10 @@ def run(opts):
         if len(results[frame]["spots"]) < opts.min_spots:
             continue
         file_tag_ene.append((frame, tag, ene))
+
+    # TODO on-the-fly status updating
+    update_status(eltime_from, status="WritingH5",
+                  ntotal=len(img_files), nproc=len(img_files), nhits=len(file_tag_ene))
     
     # Save h5
     # TODO implement on-the-fly h5 file writing in hit-finding to avoid reading img file twice.
@@ -432,15 +462,8 @@ def run(opts):
             file_tag_ene=file_tag_ene,
             comment=comment)
     
-    open("status.txt", "w").write("""\
-# Cheetah status
-Update time: %(ctime)s
-Elapsed time: %(eltime)f sec
-Status: Total=%(ntotal)d,Processed=%(ntotal)d,LLFpassed=%(ntotal)d,Hits=%(nhits)d,Status=Finished
-Frames processed: %(ntotal)d
-Number of hits: %(nhits)d
-""" % dict(ctime=time.ctime(), eltime=time.time()-eltime_from, ntotal=len(img_files), nhits=len(file_tag_ene)))
-
+    update_status(eltime_from, status="Finished",
+                  ntotal=len(img_files), nproc=len(img_files), nhits=len(file_tag_ene))
 
     ofs = open("cheetah.dat", "w")
     ofs.write("file tag nspots total_snr\n")
@@ -461,40 +484,41 @@ Number of hits: %(nhits)d
     
 if __name__ == "__main__":
     import sys
-    import optparse
+    import argparse
+    
+    parser = argparse.ArgumentParser(usage="usage: %s [options] @config.txt" % __file__, fromfile_prefix_chars="@")
 
-    parser = optparse.OptionParser(usage="usage: %prog [options]")
+    parser.add_argument("--nproc", action="store", dest="nproc", type=int, default=1)
+    parser.add_argument("--gen-adx", action="store_true", dest="gen_adx")
+    parser.add_argument("--clen", dest="clen", type=float, help="camera length in mm")
+    parser.add_argument("--beam-x", dest="beam_x", type=float, help="beam center x in px")
+    parser.add_argument("--beam-y", dest="beam_y", type=float, help="beam center y in px")
 
-    parser.add_option("--nproc", action="store", dest="nproc", type=int, default=1)
-    parser.add_option("--gen-adx", action="store_true", dest="gen_adx")
-    parser.add_option("--clen", dest="clen", type=float, help="camera length in mm")
-    parser.add_option("--beam-x", dest="beam_x", type=float, help="beam center x in px")
-    parser.add_option("--beam-y", dest="beam_y", type=float, help="beam center y in px")
+    parser.add_argument("--dmin", action="store", dest="d_min", type=float, default=0)
+    parser.add_argument("--dmax", action="store", dest="d_max", type=float, default=30)
+    parser.add_argument("--adc-threshold", action="store", dest="ADCthresh", type=float, default=5)
+    parser.add_argument("--min-snr", action="store", dest="MinSNR", type=float, default=8)
+    parser.add_argument("--min-pixcount", action="store", dest="MinPixCount", type=int, default=3)
+    parser.add_argument("--max-pixcount", action="store", dest="MaxPixCount", type=int, default=40)
+    parser.add_argument("--local-bgradius", action="store", dest="LocalBGRadius", type=float, default=2)
+    parser.add_argument("--min-peaksep", action="store", dest="MinPeakSeparation", type=float, default=0)
+    parser.add_argument("--algorithm", action="store", dest="algorithm", type=int, default=8)
+    parser.add_argument("--min-spots", action="store", dest="min_spots", type=int, default=20)
 
-    parser.add_option("--dmin", action="store", dest="d_min", type=float, default=5)
-    parser.add_option("--dmax", action="store", dest="d_max", type=float, default=30)
-    parser.add_option("--adc-threshold", action="store", dest="ADCthresh", type=float, default=5)
-    parser.add_option("--min-snr", action="store", dest="MinSNR", type=float, default=8)
-    parser.add_option("--min-pixcount", action="store", dest="MinPixCount", type=int, default=3)
-    parser.add_option("--max-pixcount", action="store", dest="MaxPixCount", type=int, default=40)
-    parser.add_option("--local-bgradius", action="store", dest="LocalBGRadius", type=float, default=2)
-    parser.add_option("--min-peaksep", action="store", dest="MinPeakSeparation", type=float, default=0)
-    parser.add_option("--algorithm", action="store", dest="algorithm", type=int, default=8)
-    parser.add_option("--min-spots", action="store", dest="min_spots", type=int, default=20)
+    parser.add_argument("-r","--run", action="store", dest="runid", type=int)
+    parser.add_argument("--pd1-thresh", action="store", dest="pd1_threshold", type=float, default=0)
+    parser.add_argument("--pd2-thresh", action="store", dest="pd2_threshold", type=float, default=0)
+    parser.add_argument("--pd3-thresh", action="store", dest="pd3_threshold", type=float, default=0)
+    parser.add_argument("--pd1-name", action="store", dest="pd1_sensor_name", type=str)
+    parser.add_argument("--pd2-name", action="store", dest="pd2_sensor_name", type=str)
+    parser.add_argument("--pd3-name", action="store", dest="pd3_sensor_name", type=str)
+    parser.add_argument("--type", action="store", dest="type", type=str)
+    parser.add_argument("--bl", action="store", dest="bl", type=int)
+    parser.add_argument("--rayonix-root", action="store", dest="rayonix_root", type=str, default="/xustrg0/rayonix/2018A/SFX")
+    parser.add_argument("-o","--output", action="store", dest="outputH5", type=str)
+    parser.add_argument("--geom-out", action="store", dest="output_geom", type=str)
 
-    parser.add_option("-r","--run", action="store", dest="runid", type=int)
-    parser.add_option("--pd1-thresh", action="store", dest="pd1_threshold", type=float, default=0)
-    parser.add_option("--pd2-thresh", action="store", dest="pd2_threshold", type=float, default=0)
-    parser.add_option("--pd3-thresh", action="store", dest="pd3_threshold", type=float, default=0)
-    parser.add_option("--pd1-name", action="store", dest="pd1_sensor_name", type=str)
-    parser.add_option("--pd2-name", action="store", dest="pd2_sensor_name", type=str)
-    parser.add_option("--pd3-name", action="store", dest="pd3_sensor_name", type=str)
-    parser.add_option("--type", action="store", dest="type", type=str)
-    parser.add_option("--bl", action="store", dest="bl", type=int)
-    parser.add_option("--rayonix-root", action="store", dest="rayonix_root", type=str, default="/xustrg0/rayonix/2018A/SFX")
-    parser.add_option("-o","--output", action="store", dest="outputH5", type=str)
-
-    opts, args = parser.parse_args(sys.argv[1:])
+    opts = parser.parse_args()
 
     opts.light_dark = PD_ANY
     opts.parallel_block = -1
@@ -517,11 +541,13 @@ if __name__ == "__main__":
                 sys.exit(1)
 
     if not opts.outputH5: opts.outputH5 = "run%d.h5" % opts.runid
+    if not opts.output_geom: opts.output_geom = "%d.geom" % opts.runid
 
     
     run(opts)
     quit()
 
+    """
     # Debug
     results = process_images(args, 10., opts)
     file_tag_ene = []
@@ -542,3 +568,4 @@ if __name__ == "__main__":
             for x,y,snr,d in ret["spots"]: adx_out.write("%6d %6d %.2e\n" % (x,y,snr))
             adx_out.close()
 
+    """
