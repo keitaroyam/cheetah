@@ -1,0 +1,15 @@
+This is used for fixed-target experiments at SACLA using BSS software.
+For MX300HS (90deg-rotated) at SACLA, start cheetah like below. 
+
+#!/bin/sh
+. ~/program/dials/dials-v1-6-0/dials_env.sh
+export PHENIX_GUI_ENVIRONMENT=1
+yamtbx.python ~/program/cheetah-biochem-fan/source/cheetah-diffscan/cheetah_dispatcher.py \
+  --data-root=/xustrg0/SFROX/2018B/hoge \
+  --taghi=201803 --bl=2 --default-energy=10 \
+  --crystfel_args=" --int-radius=4,5,7 -p ~/cell.pdb --indexing=dirax,mosflm" \
+  --queue=bl2-occupancy \
+  --min-spots=20 \
+  --rotated \
+  --corner-x=1912.115121 --corner-y=1925.911047
+
