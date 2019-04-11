@@ -253,6 +253,7 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
     # Set up a channel to receive work from the ventilator
     work_receivers = []
     for vh in ventilator_hosts.split(","):
+        if not vh: continue
         work_receivers.append(context.socket(zmq.PULL))
         work_receivers[-1].connect("tcp://%s"%vh)
 
@@ -265,8 +266,9 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
  
     # Set up a channel to receive control messages over
     control_receiver = context.socket(zmq.SUB)
-    control_receiver.connect("tcp://%s"%pub_host)
-    control_receiver.setsockopt(zmq.SUBSCRIBE, "")
+    if pub_host:
+        control_receiver.connect("tcp://%s"%pub_host)
+        control_receiver.setsockopt(zmq.SUBSCRIBE, "")
  
     # Set up a poller to multiplex the work receiver and control receiver channels
     poller = zmq.Poller()
