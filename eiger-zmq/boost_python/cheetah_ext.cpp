@@ -6,8 +6,10 @@
 
 g++ -fPIC -O3 -c peakfinders.cpp
 cd boost_python
-g++ -O3 -c cheetah_ext.cpp -shared -fPIC  -I../ -I/oys/python/python-2.7.6/include/python2.7/ -I/oys/python/python-2.7.6/lib/python2.7/site-packages/PyUblas-2013.1-py2.7-linux-x86_64.egg/pyublas/include -I/oys/python/python-2.7.6/lib/python2.7/site-packages/numpy/core/include
-g++ -shared cheetah_ext.o  -o cheetah_ext.so -L/oys/xtal/cctbx/build/lib -lboost_python ../peakfinders.o 
+#g++ -O3 -c cheetah_ext.cpp -shared -fPIC  -I../ -I/oys/python/python-2.7.6/include/python2.7/ -I/oys/python/python-2.7.6/lib/python2.7/site-packages/PyUblas-2013.1-py2.7-linux-x86_64.egg/pyublas/include -I/oys/python/python-2.7.6/lib/python2.7/site-packages/numpy/core/include
+#g++ -shared cheetah_ext.o  -o cheetah_ext.so -L/oys/xtal/cctbx/build/lib -lboost_python ../peakfinders.o 
+g++ -O3 -c cheetah_ext.cpp -shared -fPIC  -I../ -I/oys/xtal/cctbx/snapshots/dials-v1-8-3/base/include/python2.7/ -I/oys/xtal/cctbx/snapshots/dials-v1-8-3/base/lib/python2.7/site-packages/PyUblas-2017.1-py2.7-linux-x86_64.egg/pyublas/include -I/oys/xtal/cctbx/snapshots/dials-v1-8-3/base/lib/python2.7/site-packages/numpy/core/include
+g++ -shared cheetah_ext.o  -o cheetah_ext.so -L/oys/xtal/cctbx/snapshots/dials-v1-8-3/build/lib -lboost_python ../peakfinders.o 
 
 */
 #include <boost/python.hpp>
@@ -70,7 +72,7 @@ public:
         const long nasics_x = 1, nasics_y = 1;
 		assert(algorithm == 6 || algorithm == 8);
 		tPeakList peaklist;
-		allocatePeakList(&peaklist, 500);
+		allocatePeakList(&peaklist, 2000);
 
 		// Setup resolution mask
 		const double r_min = distance * std::tan(2.*std::asin(wavelength/2./hitfinderDmax)) / pixel_size;
