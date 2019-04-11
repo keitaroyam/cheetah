@@ -10,7 +10,6 @@ import Queue
 from multiprocessing import Process
 
 from cheetah_ext import CheetahSpot, CheetahSinglePanel
-from yamtbx.dataproc.myspotfinder import shikalog
 from yamtbx.dataproc import eiger
 import imageconv_ext 
 import config_manager
@@ -66,13 +65,13 @@ def cheetah_worker(header, data, algorithm, cut_roi, cheetah, binning=1):
     return result
 # cheetah_worker()
 
-def worker(wrk_num, h5in, header, framerange, queue, cut_roi, algorithm):
+def worker(wrk_num, h5in, header, framerange, queue, cut_roi, algorithm, params_str):
     """
     The code taken from yamtbx/dataproc/myspotfinder/command_line/spot_finder_backend.py (New BSD License)
     """
 
     master_params = libtbx.phil.parse(config_manager.master_params_str)
-    working_params = master_params.fetch(sources=[libtbx.phil.parse("")])
+    working_params = master_params.fetch(sources=[libtbx.phil.parse(params_str)])
     params = working_params.extract()
 
     cheetah = CheetahSinglePanel()
@@ -125,7 +124,7 @@ def run(opts, args):
     print "frame nspots eltime"
     for i, rr in enumerate(ranges):
         if not rr: continue
-        p = Process(target=worker, args=(i, h5in, header, rr, queue, opts.cut_roi, opts.algorithm))
+        p = Process(target=worker, args=(i, h5in, header, rr, queue, opts.cut_roi, opts.algorithm, opts.params))
         p.start()
         pp.append(p) 
 
@@ -150,6 +149,7 @@ if __name__ == "__main__":
     parser.add_option("--nproc", action="store", dest="nproc", type=int, default=16)
     parser.add_option("--cut-roi", action="store_true", dest="cut_roi")
     parser.add_option("--algorithm", action="store", dest="algorithm", type=int, default=8)
+    parser.add_option("--params", action="store", dest="params", type=str, default="")
 
 
     opts, args = parser.parse_args(sys.argv[1:])
