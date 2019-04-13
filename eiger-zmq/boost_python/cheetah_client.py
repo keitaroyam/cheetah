@@ -80,6 +80,42 @@ def read_eiger_stream_data(frames, bss_job_mode=4):
     return header, data
 # read_eiger_stream_data()
 
+def read_pilatus_cbf_data(cbf_data):
+    import pycbf
+    fd, cbftmp = tempfile.mkstemp(suffix="cheetah.cbf", dir="/dev/shm")
+    os.write(fd, cbf_data)
+    os.close(fd)
+    h = pycbf.cbf_handle_struct()
+    h.read_file(cbftmp, pycbf.MSG_DIGEST)
+    h.require_category("array_data")
+    h.find_column("header_contents")
+    header = h.get_value()
+    #h.require_category("array_data")
+    h.find_column("data")
+    compression, binary_id, elsize, elsigned, elunsigned, elements, minelement, maxelement, bo, ndimfast, ndimmid, ndimslow, padding = h.get_integerarrayparameters_wdims()
+    assert elsize == 4 or elsize == 8
+    assert elsigned == 1
+    assert ndimslow <= 1
+    arr = numpy.fromstring(h.get_integerarray_as_string(), dtype=numpy.int32 if elsize==4 else numpy.int64)
+    arr[arr<0] = 0
+    arr = arr.astype(numpy.uint32).reshape(ndimmid, ndimfast)
+    os.remove(cbftmp)
+    hdict = {}
+    for l in header.splitlines():
+        if l.startswith("# Wavelength"):
+            hdict["wavelength"] = float(l.split()[2])
+        elif l.startswith("# Beam_xy"):
+            tmp = l[l.index("(")+1:l.rindex(")")].split(",")
+            hdict["beam_center_x"] = float(tmp[0])
+            hdict["beam_center_y"] = float(tmp[1])
+        elif l.startswith("# Detector_distance"):
+            hdict["distance"] = float(l.split()[2])*1000.
+        elif l.startswith("# Pixel_size"):
+            hdict["pixel_size_x"] = float(l.split()[2])*1000.
+    
+    return arr, hdict
+# read_pilatus_cbf_data()
+
 def software_binning(data, binning):
     u = l = 0
     b = r = None
@@ -187,7 +223,7 @@ def zoomed_image(data, vendortype, width, height, beamx, beamy,
     return x0, y0, mag, imgdata
 # zoomed_image()
 
-def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1):
+def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah, binning=1, vendortype="EIGER"):
     beamx, beamy = header["beam_center_x"], header["beam_center_y"]
     pixel_size = header["pixel_size_x"]
     d_min = cheetah.get_params()["Dmin"]
@@ -221,7 +257,7 @@ def cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
                       header["wavelength"], header["distance"], pixel_size,
                       algorithm=algorithm)
 
-    x0, y0, mag, imgdata = zoomed_image(data, vendortype="EIGER", width=data.shape[1], height=data.shape[0],
+    x0, y0, mag, imgdata = zoomed_image(data, vendortype=vendortype, width=data.shape[1], height=data.shape[0],
                                         beamx=header["beam_center_x"], beamy=header["beam_center_y"],
                                         distance=header["distance"], wavelength=header["wavelength"],
                                         pixel_size=header["pixel_size_x"],
@@ -299,16 +335,22 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
         # the message from ventilator
         if any(map(lambda x: socks.get(x)==zmq.POLLIN, work_receivers)):
             work_receiver = filter(lambda x: socks.get(x)==zmq.POLLIN, work_receivers)[0]
-            msg = work_receiver.recv_json()
+            #msg = work_receiver.recv_json() # NEED TO FIX OTHER FILES!!
+            msg = work_receiver.recv_pyobj()
             imgfile = str(msg["imgfile"])
             header = msg["header"]
             startt = time.time()
+            vendortype = "EIGER"
 
             if "h5master" in msg: #imgfile.endswith(".h5"):
                 from yamtbx.dataproc import eiger
                 data = eiger.extract_data(str(msg["h5master"]), msg["idx"])
                 data[data<0] = 0
                 data = data.astype(numpy.uint32)
+            elif "cbf_data" in msg:
+                data, hdict = read_pilatus_cbf_data(msg["cbf_data"])
+                header.update(hdict)
+                vendortype = "Pilatus-6M"
             else:
                 raise "Unsupported type"
 
@@ -322,7 +364,7 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
 
             try:
                 result = cheetah_worker(header, data, work_dir, imgfile, algorithm, cut_roi, cheetah,
-                                        params.cheetah.binning)
+                                        params.cheetah.binning, vendortype=vendortype)
                 result["starttime"] = startt
                 result["endtime"] = time.time()
                 result["params"] = params
