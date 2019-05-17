@@ -386,7 +386,7 @@ def worker(wrk_num, ventilator_hosts, eiger_host, result_host, pub_host, mode, c
 
             startt = time.time()
             header, data = read_eiger_stream_data(frames)
-            if None in (header, data): continue
+            if header is None or data is None: continue
 
             work_dir = os.path.join(str(header["data_directory"]), "_spotfinder")
             params.work_dir = work_dir
