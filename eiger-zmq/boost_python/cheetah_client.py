@@ -112,6 +112,21 @@ def read_pilatus_cbf_data(cbf_data):
             hdict["distance"] = float(l.split()[2])*1000.
         elif l.startswith("# Pixel_size"):
             hdict["pixel_size_x"] = float(l.split()[2])*1000.
+        elif l.startswith("# Comment:"):
+            # {sd:horizontal,sp:zig-zag,hs:0.010,hn:100,vs:0.010,vn:100}
+            asis = lambda x: x
+            conv_d = dict(sd=("raster_scan_direction", asis),
+                          sp=("raster_scan_path", asis),
+                          hs=("raster_horizontal_step", float),
+                          hn=("raster_horizontal_number", int),
+                          vs=("raster_vertical_step", float),
+                          vn=("raster_vertical_number", int),
+                          )
+            tmp = l[l.index("{")+1:l.rindex("}")].split(",")
+            for kv in tmp:
+                k, v = kv.split(":")
+                newk, f = conv_d.get(k, (k, asis))
+                hdict[newk] = f(v)
     
     return arr, hdict
 # read_pilatus_cbf_data()
