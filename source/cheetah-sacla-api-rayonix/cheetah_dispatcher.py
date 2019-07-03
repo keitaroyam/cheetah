@@ -76,7 +76,7 @@ if [ ! -e run{runname}.h5 ]; then
    cp {runid}.h5 run{runname}.h5
 fi
 
-@@CHEETAH_PATH@@/cheetah-sacla-api2 --ini ../sacla-photon.ini --run {runid} -o run{runname}.h5 --bl {beamline} {arguments} 2>&1 >> cheetah.log
+@@CHEETAH_PATH@@/cheetah-sacla-api2 --ini ../sacla-photon.ini --run {runid} -o run{runname}.h5 --bl {beamline} {arguments}
 rm {runid}.h5
 
 # th 100 gr 5000000 for > 10 keV
@@ -127,7 +127,7 @@ while :; do
 done
 
 cp {runid}.h5 run{runname}.h5
-@@CHEETAH_PATH@@/cheetah-sacla-api2 --ini ../sacla-photon.ini --run {runid} -o run{runname}.h5 --bl {beamline} {arguments} 2>&1 >> cheetah.log
+@@CHEETAH_PATH@@/cheetah-sacla-api2 --ini ../sacla-photon.ini --run {runid} -o run{runname}.h5 --bl {beamline} {arguments}
 rm {runid}.h5
 
 # th 100 gr 5000000 for > 10 keV
@@ -164,11 +164,11 @@ hostname > job.host
 source @@SETUP_SCRIPT@@
 ShowRunInfo -b {beamline} -r {runid} > run.info
 
-dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runid}.geom --bl {beamline} --nproc $NCPUS {arguments} @../sacla-rayonix.cfg 2>&1 >> cheetah.log
+dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} 2>&1 >> cheetah.log
 
 
 # th 100 gr 5000000 for > 10 keV
-@@INDEXAMAJIG_PATH@@/indexamajig -g {runid}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
+@@INDEXAMAJIG_PATH@@/indexamajig -g {runname}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
 run{runname}.h5
 EOF
 rm -fr indexamajig.*
@@ -197,7 +197,7 @@ hostname > job.host
 source @@SETUP_SCRIPT@@
 ShowRunInfo -b {beamline} -r {runid} > run.info
 
-dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} @../sacla-rayonix.cfg 2>&1 >> cheetah.log
+dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} 2>&1 >> cheetah.log
 
 # th 100 gr 5000000 for > 10 keV
 @@INDEXAMAJIG_PATH@@/indexamajig -g {runname}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
@@ -563,9 +563,9 @@ class MainWindow(wx.Frame):
         runnum = re.sub("-light|-0", "", runid)
         def launchHDFsee():
             if os.path.exists("%s/%s.stream" % (runid, runid)):
-                command = "cd {runid}; hdfsee -g {runnum}.geom {runid}.stream -c invmono -i 10 &".format(runid=runid, runnum=runnum)
+                command = "cd {runid}; hdfsee -g {runid}.geom {runid}.stream -c invmono -i 10 &".format(runid=runid, runnum=runnum)
             else:
-                command = "hdfsee -g {runid}/{runnum}.geom {runid}/run{runid}.h5 -c invmono -i 10 &".format(runid=runid, runnum=runnum)
+                command = "hdfsee -g {runid}/{runid}.geom {runid}/run{runid}.h5 -c invmono -i 10 &".format(runid=runid, runnum=runnum)
             os.system(command)
 
         threading.Thread(target=launchHDFsee).start()
@@ -947,11 +947,6 @@ if opts.detector=="mpccd" and not os.path.exists("sacla-photon.ini"):
     sys.stderr.write("You should copy @@TEMPLATE_FILE@@ into this directory\n")
     sys.stderr.write("and confirm the settings.\n")
     sys.exit(-1)
-    
-if opts.detector=="rayonix" and not os.path.exists("sacla-rayonix.cfg"):
-    sys.stderr.write("WARNING: Configuration file was not found!\n")
-    sys.stderr.write("Generating empty config file sacla-rayonix.cfg\n\n")
-    open("sacla-rayonix.cfg", "a").close()
 
 if opts.detector=="rayonix" and (opts.pd1_name or opts.pd2_name or opts.pd3_name):
     sys.stderr.write("ERROR: PD threshold setting is not supported for Rayonix detectors!\n")

@@ -8,14 +8,15 @@ import struct
 import numpy
 import datetime
 
+timeconv = lambda t: datetime.datetime.strptime(t, "%m%d%H%M%Y.%S")
 
-def timeconv(t):
-    t = t.replace("\0", "").strip()
-    if len(t[t.index(".")+1:]) == 2:
-        return datetime.datetime.strptime(t, "%m%d%H%M%Y.%S")
-    else:
-        return datetime.datetime.strptime(t[:-3], "%m%d%H%M%Y.%S%f")
-# timeconv()
+
+class MarCCDHeader:
+    def __init__(self):
+        pass
+    # __init__()
+# class MarCCDHeader
+
 
 class MarCCD:
     def __init__(self, img_in):
@@ -107,11 +108,7 @@ class MarCCD:
             #print k, d
             #setattr(self, k, d)
             if k=="acquire_timestamp":
-                self.acquire_time = timeconv(d)
-            elif k=="header_timestamp":
-                self.header_time = timeconv(d)
-            elif k=="save_timestamp":
-                self.save_time = timeconv(d)
+                self.acquire_time = datetime.datetime.strptime(d.replace("\0", "")[:-3], "%m%d%H%M%Y.%S%f")
 
 
         f.seek(1024 - struct.calcsize(fmt), 1)

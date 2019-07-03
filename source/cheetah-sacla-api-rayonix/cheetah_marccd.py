@@ -236,27 +236,6 @@ def process_images(img_files, mean_photon_energy, opts):
     return results
 # process_images()
 
-def update_status(eltime_from, status=None, ntotal=None, nproc=None, nhits=None):
-    ss = []
-    if ntotal is not None: ss.append("Total=%d"%ntotal)
-    if nproc is not None: ss.append("Processed=%d,LLFpassed=%d"%(nproc,nproc))
-    if nhits is not None: ss.append("Hits=%d"%nhits)
-    if status is not None: ss.append("Status=%s"%status)
-    
-    ofs = open("status.txt", "w")
-    ofs.write("""\
-# Cheetah status
-Update time: %(ctime)s
-Elapsed time: %(eltime)f sec
-Status: %(status_txt)s
-"""% dict(ctime=time.ctime(), eltime=time.time()-eltime_from, status_txt=",".join(ss)))
-
-    if ntotal is not None: ofs.write("Frames processed: %d\n"%ntotal)
-    if nhits is not None: ofs.write("Number of hits: %d\n"%nhits)
-
-    ofs.close()
-# update_status()
-
 def error_status(err_str):
     open("status.txt", "w").write("""\
 # Cheetah status
@@ -264,6 +243,7 @@ Update time: %(ctime)s
 Status: Status=Error-%(err_str)s
 """ % dict(ctime=time.ctime(), err_str=err_str))
 # error_status()
+
 
 def run(opts):
     eltime_from = time.time()
@@ -441,9 +421,6 @@ def run(opts):
 
     make_geom(img_files[0], opts.output_geom, beam_x=opts.beam_x, beam_y=opts.beam_y, clen=opts.clen)
 
-    update_status(eltime_from, status="HitFinding",
-                  ntotal=len(img_files), nproc=0, nhits=0)
-
     # Hit-finding
     results = process_images(img_files, mean_photon_energy, opts)
     file_tag_ene = []
@@ -453,17 +430,30 @@ def run(opts):
         file_tag_ene.append((frame, tag, ene))
 
     # TODO on-the-fly status updating
-    update_status(eltime_from, status="WritingH5",
-                  ntotal=len(img_files), nproc=len(img_files), nhits=len(file_tag_ene))
-    
+    open("status.txt", "w").write("""\
+# Cheetah status
+Update time: %(ctime)s
+Elapsed time: %(eltime)f sec
+Status: Total=%(ntotal)d,Processed=%(ntotal)d,LLFpassed=%(ntotal)d,Hits=%(nhits)d,Status=WritingH5
+Frames processed: %(ntotal)d
+Number of hits: %(nhits)d
+""" % dict(ctime=time.ctime(), eltime=time.time()-eltime_from, ntotal=len(img_files), nhits=len(file_tag_ene)))
+
     # Save h5
     # TODO implement on-the-fly h5 file writing in hit-finding to avoid reading img file twice.
     make_h5(out=opts.outputH5,
             file_tag_ene=file_tag_ene,
             comment=comment)
     
-    update_status(eltime_from, status="Finished",
-                  ntotal=len(img_files), nproc=len(img_files), nhits=len(file_tag_ene))
+    open("status.txt", "w").write("""\
+# Cheetah status
+Update time: %(ctime)s
+Elapsed time: %(eltime)f sec
+Status: Total=%(ntotal)d,Processed=%(ntotal)d,LLFpassed=%(ntotal)d,Hits=%(nhits)d,Status=Finished
+Frames processed: %(ntotal)d
+Number of hits: %(nhits)d
+""" % dict(ctime=time.ctime(), eltime=time.time()-eltime_from, ntotal=len(img_files), nhits=len(file_tag_ene)))
+
 
     ofs = open("cheetah.dat", "w")
     ofs.write("file tag nspots total_snr\n")
@@ -514,10 +504,11 @@ if __name__ == "__main__":
     parser.add_argument("--pd3-name", action="store", dest="pd3_sensor_name", type=str)
     parser.add_argument("--type", action="store", dest="type", type=str)
     parser.add_argument("--bl", action="store", dest="bl", type=int)
-    parser.add_argument("--rayonix-root", action="store", dest="rayonix_root", type=str, default="/xustrg0/rayonix/2018A/SFX")
+    parser.add_argument("--rayonix-root", action="store", dest="rayonix_root", type=str, default="/xustrg0/SFX")
     parser.add_argument("-o","--output", action="store", dest="outputH5", type=str)
     parser.add_argument("--geom-out", action="store", dest="output_geom", type=str)
 
+    #opts, args = parser.parse_args(sys.argv[1:])
     opts = parser.parse_args()
 
     opts.light_dark = PD_ANY
