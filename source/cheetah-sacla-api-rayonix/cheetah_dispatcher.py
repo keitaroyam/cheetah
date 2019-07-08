@@ -164,7 +164,7 @@ hostname > job.host
 source @@SETUP_SCRIPT@@
 ShowRunInfo -b {beamline} -r {runid} > run.info
 
-dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} 2>&1 >> cheetah.log
+@@PYTHON@@ @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} 2>&1 >> cheetah.log
 
 
 # th 100 gr 5000000 for > 10 keV
@@ -197,7 +197,7 @@ hostname > job.host
 source @@SETUP_SCRIPT@@
 ShowRunInfo -b {beamline} -r {runid} > run.info
 
-dials.python @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} 2>&1 >> cheetah.log
+@@PYTHON@@ @@CHEETAH_PATH@@/cheetah_marccd.py --run {runid} -o run{runname}.h5 --geom-out {runname}.geom --bl {beamline} --nproc $NCPUS {arguments} 2>&1 >> cheetah.log
 
 # th 100 gr 5000000 for > 10 keV
 @@INDEXAMAJIG_PATH@@/indexamajig -g {runname}.geom --indexing=dirax --peaks=zaef --threshold=400 --min-gradient=10000 --min-snr=5 --int-radius=3,4,7 -o {runname}.stream -j 14 -i - {crystfel_args} <<EOF
@@ -711,6 +711,7 @@ class MainWindow(wx.Frame):
             if opts.clen and opts.clen==opts.clen: arguments += " --clen=%f " % opts.clen
             if opts.beam_x and opts.beam_x==opts.beam_x: arguments += " --beam-x=%f " % opts.beam_x
             if opts.beam_y and opts.beam_y==opts.beam_y: arguments += " --beam-y=%f " % opts.beam_y
+            if opts.rayonix_root: arguments += ' --rayonix-root="%s" ' % opts.rayonix_root
 
         if (pd1_thresh != 0 or pd2_thresh != 0 or pd3_thresh != 0):
             run_dir += "-light"
@@ -935,6 +936,7 @@ parser.add_option("--pd1_thresh", dest="pd1_thresh", type=float, default=0, help
 parser.add_option("--pd2_thresh", dest="pd2_thresh", type=float, default=0, help="PD2 threshold")
 parser.add_option("--pd3_thresh", dest="pd3_thresh", type=float, default=0, help="PD3 threshold")
 parser.add_option("--detector", dest="detector", type=str, default="mpccd", help="mpccd or rayonix")
+parser.add_option("--rayonix-root", dest="rayonix_root", type=str, default="/xustrg0/SFX")
 
 opts, args = parser.parse_args()
 
@@ -981,6 +983,7 @@ if opts.bl != 2 and opts.bl != 3:
     sys.exit(-1)
 
 print "Option: detector         = %s" % opts.detector
+if opts.detector=="rayonix": print "Option: rayonix-root     = %s" % opts.rayonix_root
 print "Option: monitor          = %s" % opts.monitor
 print "Option: bl               = %d" % opts.bl
 print "Option: clen             = %f mm" % opts.clen
