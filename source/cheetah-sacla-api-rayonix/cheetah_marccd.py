@@ -128,6 +128,12 @@ def worker(wrk_num, header, imgfiles, queue, algorithm,
 
 def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+gz"):
     startt = time.time()
+
+    from multiprocessing.dummy import Pool as ThreadPool
+    import threading
+    import zlib
+
+    lock = threading.Lock()
     of = h5py.File(out, "w")
 
     of["/metadata/detector"] = "Rayonix MX300HS"
@@ -138,11 +144,19 @@ def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+g
         of["/metadata/pixelsize_in_um"] = tmp.pixel_x*1000.
         if not default_energy: default_energy = 12.3984 / tmp.wavelength
 
-    for f, tag, ene in file_tag_ene:
+    def write_par(i):
+        f, tag, ene = file_tag_ene[i]
         tmp = time.time()
         data = marccd.MarCCD(f).read_data()
         grp = of.create_group("tag-%d"%tag)
         if ene!=ene: ene = default_energy
+
+        if compression=="shuf+gz":
+            as_uint8 = data.view(dtype=numpy.uint8)
+            shuffled = as_uint8.reshape((-1, data.dtype.itemsize)).transpose().reshape(-1)
+            shuffled_compressed = zlib.compress(shuffled.tobytes(), 4)
+
+        lock.acquire()
         grp["photon_energy_ev"] = ene*1000.
         grp["photon_wavelength_A"] = 12.3984/ene
         grp["original_file"] = f
@@ -156,13 +170,18 @@ def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+g
                                compression_opts=(0, bitshuffle.h5.H5_COMPRESS_LZ4),
                                dtype=data.dtype, data=data)
         elif compression=="shuf+gz":
-            grp.create_dataset("data", data.shape,
-                               compression="gzip", shuffle=True,
-                               dtype=data.dtype, data=data)
+            dataset = grp.create_dataset("data", data.shape,
+                                         compression="gzip", shuffle=True,
+                                         dtype=data.dtype, chunks=data.shape)
+            dataset.id.write_direct_chunk(offsets=(0, 0), data=shuffled_compressed, filter_mask=0)
         else:
             raise "Unknwon compression name (%s)" % compression
-    
+
         print "# converted: %s %d %.4f %.2f" %(f, tag, ene, (time.time()-tmp)*1.e3)
+        lock.release()
+
+    pool = ThreadPool(opts.nproc)
+    pool.map(write_par, xrange(len(file_tag_ene)))
 
     of.close()
     
