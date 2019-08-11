@@ -126,7 +126,7 @@ def worker(wrk_num, header, imgfiles, queue, algorithm,
     #print "Worker %d finished." % wrk_num
 # worker()
 
-def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+gz"):
+def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+gz", compression_level=4):
     startt = time.time()
 
     from multiprocessing.dummy import Pool as ThreadPool
@@ -152,11 +152,36 @@ def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+g
         if ene!=ene: ene = default_energy
 
         if compression=="shuf+gz":
-            as_uint8 = data.view(dtype=numpy.uint8)
-            shuffled = as_uint8.reshape((-1, data.dtype.itemsize)).transpose().reshape(-1)
-            shuffled_compressed = zlib.compress(shuffled.tobytes(), 6)
-            # h5py's default is 4 but lack of 2D chunking here means worse (~ 5 %) compression,
-            # so I used zlib's default 6 instead. This is still bit worse (~ 2 %) than h5py.
+            if data.shape[0] % 384 == 0:
+                chunks = (384, 384)
+            elif data.shape[0] % 256 == 0:
+                chunks = (256, 256)
+            else:
+                chunks = data.shape
+
+            assert len(data.shape) == 2
+            assert len(chunks) == 2
+            assert data.shape[1] % chunks[1] == 0 # because we didn't implement padding to fill a chunk
+
+            as_uint8 = data.view(dtype=numpy.uint8) # ONLY the length of the fast axis is doubled
+            itemsize = data.dtype.itemsize
+
+            cy = int(numpy.ceil(data.shape[0] / chunks[0]))
+            cx = int(numpy.ceil(data.shape[1] / chunks[1]))
+
+            compressed_chunks = [None] * (cy * cx)
+            for iy in xrange(cy):
+                for ix in xrange(cx):
+                    sy = iy * chunks[0]
+                    sx = ix * chunks[1]
+                    ey = (iy + 1) * chunks[0]
+                    ex = (ix + 1) * chunks[1]
+                    if ey > data.shape[0]: ey = data.shape[0]
+                    if ex > data.shape[1]: ex = data.shape[1]
+
+                    my_chunk = as_uint8[sy:ey, (sx * itemsize):(ex * itemsize)]
+                    shuffled = my_chunk.reshape((-1, data.dtype.itemsize)).transpose().reshape(-1)
+                    compressed_chunks[iy * cx + ix] = zlib.compress(shuffled.tobytes(), compression_level)
 
         lock.acquire()
         grp["photon_energy_ev"] = ene*1000.
@@ -172,10 +197,17 @@ def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+g
                                compression_opts=(0, bitshuffle.h5.H5_COMPRESS_LZ4),
                                dtype=data.dtype, data=data)
         elif compression=="shuf+gz":
-            dataset = grp.create_dataset("data", data.shape,
+            dataset = grp.create_dataset("data", data.shape, chunks=chunks,
                                          compression="gzip", shuffle=True,
-                                         dtype=data.dtype, chunks=data.shape)
-            dataset.id.write_direct_chunk(offsets=(0, 0), data=shuffled_compressed, filter_mask=0)
+                                         dtype=data.dtype)
+
+            for iy in xrange(cy):
+                 for ix in xrange(cx):
+                     sy = iy * chunks[0]
+                     sx = ix * chunks[1]
+
+                     dataset.id.write_direct_chunk(offsets=(sy, sx),
+                                                   data=compressed_chunks[iy * cx + ix], filter_mask=0)
         else:
             raise "Unknwon compression name (%s)" % compression
 
