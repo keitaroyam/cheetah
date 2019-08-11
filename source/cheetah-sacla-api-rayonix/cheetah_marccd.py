@@ -154,7 +154,9 @@ def make_h5(out, file_tag_ene, comment, default_energy=None, compression="shuf+g
         if compression=="shuf+gz":
             as_uint8 = data.view(dtype=numpy.uint8)
             shuffled = as_uint8.reshape((-1, data.dtype.itemsize)).transpose().reshape(-1)
-            shuffled_compressed = zlib.compress(shuffled.tobytes(), 4)
+            shuffled_compressed = zlib.compress(shuffled.tobytes(), 6)
+            # h5py's default is 4 but lack of 2D chunking here means worse (~ 5 %) compression,
+            # so I used zlib's default 6 instead. This is still bit worse (~ 2 %) than h5py.
 
         lock.acquire()
         grp["photon_energy_ev"] = ene*1000.
