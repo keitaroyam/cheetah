@@ -712,6 +712,7 @@ class MainWindow(wx.Frame):
             if opts.beam_x and opts.beam_x==opts.beam_x: arguments += " --beam-x=%f " % opts.beam_x
             if opts.beam_y and opts.beam_y==opts.beam_y: arguments += " --beam-y=%f " % opts.beam_y
             if opts.rayonix_root: arguments += ' --rayonix-root="%s" ' % opts.rayonix_root
+            arguments += " --min-spots=%d " % opts.min_spots
 
         if (pd1_thresh != 0 or pd2_thresh != 0 or pd3_thresh != 0):
             run_dir += "-light"
@@ -937,6 +938,7 @@ parser.add_option("--pd2_thresh", dest="pd2_thresh", type=float, default=0, help
 parser.add_option("--pd3_thresh", dest="pd3_thresh", type=float, default=0, help="PD3 threshold")
 parser.add_option("--detector", dest="detector", type=str, default="mpccd", help="mpccd or rayonix")
 parser.add_option("--rayonix-root", dest="rayonix_root", type=str, default="/xustrg0/SFX")
+parser.add_option("--min-spots", action="store", dest="min_spots", type=int, default=20)
 
 opts, args = parser.parse_args()
 
@@ -999,6 +1001,7 @@ print "Option: pd3_thresh       = %f" % opts.pd3_thresh
 print "Option: submit_dark_to   = %s" % opts.submit_dark_to
 print "Option: submit_dark_any  = %s" % opts.submit_dark_any
 print "Option: crystfel_args    = %s" % opts.crystfel_args
+print "Option: min_spots        = %s" % opts.min_spots
 
 if opts.submit > 0: # headless
     mw = MainWindow(None, opts, True)
