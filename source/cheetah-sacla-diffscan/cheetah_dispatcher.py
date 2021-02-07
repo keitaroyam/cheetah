@@ -100,9 +100,9 @@ echo $PBS_JOBID > {prefix}_job.id
 
 eltime_from=`date +"%s"`
 # XXX only prefix_[0-9]+.img should be processed
-/usr/bin/time -o {prefix}_eltime.log --append -f "cheetah %E" cheetah.local_singles {datadir}/{prefix}_*.img --nproc=$NCPUS --output={prefix}_cheetah_spots.dat --min-snr=8 --dmin=5
-/usr/bin/time -o {prefix}_eltime.log --append -f "convh5 %E" yamtbx.python /home/hirata/program/cheetah-biochem-fan/source/cheetah-diffscan/conv_h5_with_energy.py \
-        {prefix}_cheetah_spots.dat {diffscan_log} --min-spots={min_spots} --default-energy={default_energy} --out {prefix}_hits.h5 --status-out={prefix}_status.txt --eltime-from=$eltime_from --geom-out={prefix}.geom --bl={beamline} --taghi={taghi} --nproc=$NCPUS --max-in-h5=100 --corner-x={corner_x} --corner-y={corner_y} {rotated_option}
+/usr/bin/time -o {prefix}_eltime.log --append -f "cheetah %E" /home/sacla_sfx_app/packages/rayonix/cheetah-diffscan/eiger-zmq/bin/cheetah.local_singles {datadir}/{prefix}_*.img --nproc=$NCPUS --output={prefix}_cheetah_spots.dat --min-snr=8 --dmin=5
+/usr/bin/time -o {prefix}_eltime.log --append -f "convh5 %E" /home/sacla_sfx_app/packages/rayonix/dials-v1-10-2/build/bin/dials.python /home/sacla_sfx_app/packages/rayonix/cheetah-diffscan/conv_h5_with_energy.py \
+        {prefix}_cheetah_spots.dat {diffscan_log} --min-spots={min_spots} --default-energy={default_energy} --out {prefix}_hits.h5 --status-out={prefix}_status.txt --eltime-from=$eltime_from --geom-out={prefix}.geom --bl={beamline} --nproc=$NCPUS --max-in-h5=100 --corner-x={corner_x} --corner-y={corner_y} {rotated_option}
 
 R --vanilla <<+
 d=read.table("{prefix}_hits_forplot.dat",h=T)
@@ -201,7 +201,7 @@ class LogWatcher(threading.Thread):
         f = open("%s/%s_run.sh" % (run_dir, self.prefix), "w")
         opts = self.window.opts
         f.write(job_script.format(runname=run_dir, clen=opts.clen, queuename=opts.queue, prefix=self.prefix, diffscan_log=os.path.join(self.datadir, "diffscan.log"),
-                                  datadir=self.datadir, crystfel_args=opts.crystfel_args, beamline=opts.bl, taghi=opts.taghi, corner_x=opts.corner_x, corner_y=opts.corner_y,
+                                  datadir=self.datadir, crystfel_args=opts.crystfel_args, beamline=opts.bl, corner_x=opts.corner_x, corner_y=opts.corner_y,
                                   rotated_option="--rotated" if opts.rotated else "", default_energy=opts.default_energy, min_spots=opts.min_spots))
         f.close()
 
@@ -1037,7 +1037,6 @@ parser.add_option("--max_jobs", dest="max_jobs", type=int, default=14, help="max
 #parser.add_option("--submit_dark_any", dest="submit_dark_any", type=int, default=False, help="accepts any lights and darks (Ln-Dm) and divide into light and dark")
 parser.add_option("--crystfel_args", dest="crystfel_args", type=str, default="", help="optional arguments to CrystFEL")
 parser.add_option("--data-root", dest="data_root", type=str, help="Root directory to find img files")
-parser.add_option("--taghi", dest="taghi", type=int, help="")
 parser.add_option("--corner-x", dest="corner_x", type=float, help="override beam center", default=float("nan"))
 parser.add_option("--corner-y", dest="corner_y", type=float, help="override beam center", default=float("nan"))
 parser.add_option("--rotated", dest="rotated", action="store_true", help="rotated MX300HS")
@@ -1072,10 +1071,6 @@ if opts.max_jobs < 1:
 
 if opts.bl != 2 and opts.bl != 3:
     sys.stderr.write("ERROR: beamline must be 2 or 3.\n")
-    sys.exit(-1)
-
-if not opts.taghi:
-    sys.stderr.write("ERROR: give --taghi=.\n")
     sys.exit(-1)
 
 if not opts.data_root or not os.path.isdir(opts.data_root):

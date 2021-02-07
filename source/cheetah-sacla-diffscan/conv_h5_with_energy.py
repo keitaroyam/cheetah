@@ -3,6 +3,7 @@ import numpy
 import math
 import os
 import time
+import datetime
 import dbpy
 from yamtbx.dataproc.XIO import XIO
 from yamtbx.dataproc import cbf
@@ -173,17 +174,29 @@ def make_h5(out, file_spots_tag, energies, comment, default_energy):
     print "Processed:", out
 # make_h5()
 
+def get_taghi(filename):
+    ctime = os.path.getctime(filename)
+    ctime = datetime.datetime.fromtimestamp(ctime)
+    taghi = dbpy.read_hightagnumber_fromtime(ctime.strftime("%H:%M:%S"), ctime.day, ctime.month, ctime.year)
+    print "Timestamp, Taghi=", ctime, taghi
+    return taghi
+# get_taghi()
+
 def run(opts, cheetah_dat, scanlog):#, ene_dat):
 
     #energies = read_ene_dat(ene_dat, opts.default_energy)
     file_spots_tag = read_cheetah_dat(cheetah_dat, scanlog, os.path.splitext(opts.out)[0]+"_forplot.dat")
     n_proccessed_images = len(file_spots_tag)
+    if n_proccessed_images > 0:
+        taghi = get_taghi(file_spots_tag[0][0])
+    else:
+        tahi = None
 
     if opts.geom_out and file_spots_tag:
         make_geom(file_spots_tag[0][0], opts.geom_out, corner_x=opts.corner_x, corner_y=opts.corner_y, rotated=opts.rotated)
 
     file_spots_tag = filter(lambda x: x[1] >= opts.min_spots, file_spots_tag)
-    energies = get_energies(map(lambda x: x[2], file_spots_tag), opts.taghi, opts.bl)
+    energies = get_energies(map(lambda x: x[2], file_spots_tag), taghi, opts.bl)
 
     lst_out = open(os.path.splitext(opts.out)[0]+".dat", "w")
     print >>lst_out, "# cheetah_dat=", cheetah_dat
@@ -268,12 +281,11 @@ if __name__ == "__main__":
     parser.add_option("--rotated", dest="rotated", action="store_true", help="rotated MX300HS")
     parser.add_option("--geom-out", dest="geom_out", type=str)
     parser.add_option("--comment", dest="comment", type=str)
-    parser.add_option("--taghi", dest="taghi", type=int)
     parser.add_option("--bl", dest="bl", type=int)
 
     opts, args = parser.parse_args()
 
-    assert None not in (opts.default_energy, opts.min_spots, opts.out, opts.taghi, opts.bl)
+    assert None not in (opts.default_energy, opts.min_spots, opts.out, opts.bl)
     assert opts.out.endswith(".h5")
 
     cheetah_dat, diffscan_log = args
